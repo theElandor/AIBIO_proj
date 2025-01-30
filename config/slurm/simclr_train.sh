@@ -10,4 +10,4 @@
 #SBATCH --mem=15G
 #SBATCH --time=24:00:00
 
-python3 /homes/nmorelli/bio_inf/source/train.py /homes/nmorelli/bio_inf/config/train/server_conf.yaml
+python3 /homes/nmorelli/AIBIO_proj/source/train.py /homes/nmorelli/AIBIO_proj/config/train/server_conf.yaml

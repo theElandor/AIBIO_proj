@@ -10,4 +10,4 @@
 #SBATCH --mem=10G
 #SBATCH --time=24:00:00
 
-python3 /homes/nmorelli/bio_inf/source/utils.py
+python3 /homes/nmorelli/AIBIO_proj/source/utils.py
