@@ -1,3 +1,6 @@
+import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from prettytable import PrettyTable
 from wilds import get_dataset
 import torch
@@ -8,6 +11,7 @@ from sklearn.cluster import KMeans
 from tqdm import tqdm
 import numpy as np
 from scipy.stats import mode
+
 
 
 def display_configs(configs):
