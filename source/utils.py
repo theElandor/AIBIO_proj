@@ -33,7 +33,7 @@ def load_device(config):
 
 
 def download_dataset():
-    dataset = get_dataset(dataset="rxrx1", download=True, root_dir='/work/ai4bio2024/rxrx1/')
+    dataset = get_dataset(dataset="rxrx1", download=True, root_dir='')
 
 
 def contrastive_loss(features, device, temperature=0.5):

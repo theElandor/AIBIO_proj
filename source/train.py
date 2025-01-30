@@ -1,3 +1,6 @@
+import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 from dataset import Rxrx1
@@ -5,7 +8,6 @@ import yaml, torchvision
 import utils, torch, sys
 import torch.nn as nn
 import torchvision.transforms.v2 as transforms
-
 from source.utils import *
 
 torch.manual_seed(42)
@@ -17,7 +19,7 @@ device = load_device(config)
 dataset = Rxrx1(config['dataset_dir'])
 
 train_size = int(0.7 * len(dataset))
-val_size = int(0.297 * len(dataset))
+val_size = int(0.15 * len(dataset))
 test_size = len(dataset) - train_size - val_size
 train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
 
