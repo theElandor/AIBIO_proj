@@ -1,4 +1,4 @@
-batch_size: 128
+batch_size: 16
 dataset_dir: /work/ai4bio2024/rxrx1
 checkpoint_dir: /homes/nmorelli/checkpoints/simclr
 device: gpu
@@ -8,3 +8,4 @@ loss: contrastive
 opt: adam
 evaluation_freq: 4
 model_save_freq: 4
+multiple_gpus: True

@@ -36,6 +36,8 @@ transform = transforms.Compose([
 net.to(device)
 test_kmean_accuracy(net.backbone, DataLoader(test_dataset, batch_size=config['batch_size']), device)
 net.train()
+if config['multiple_gpus']:
+    net = nn.DataParallel(net)
 
 training_loss_values = []  # store every training loss value
 validation_loss_values = []  # store every validation loss value

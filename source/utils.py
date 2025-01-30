@@ -25,7 +25,7 @@ def display_configs(configs):
 def load_device(config):
     if config['device'] == 'gpu':
         assert torch.cuda.is_available(), "Notebook is not configured properly!"
-        device = 'cuda:0'
+        device = 'cuda'
         print("Training network on {}".format(torch.cuda.get_device_name(device=device)))
     else:
         device = torch.device('cpu')
