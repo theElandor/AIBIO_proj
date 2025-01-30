@@ -2,44 +2,63 @@ from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 from dataset import Rxrx1
 import yaml, torchvision
-import utils, torch
+import utils, torch, sys
 import torch.nn as nn
+import torchvision.transforms.v2 as transforms
+
+from source.utils import *
 
 torch.manual_seed(42)
-with open("/home/nicola/Desktop/bio_inf/config/train/conf.yaml", "r") as f:
+inFile = sys.argv[1]
+with open(inFile, "r") as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 utils.display_configs(config)
-
+device = load_device(config)
 dataset = Rxrx1(config['dataset_dir'])
 
 train_size = int(0.7 * len(dataset))
-val_size = int(0.15 * len(dataset))
+val_size = int(0.297 * len(dataset))
 test_size = len(dataset) - train_size - val_size
 train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
 
-dataset_loader = DataLoader(train_dataset, batch_size=config['batch_size'])
+train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'])
 
-net = torchvision.models.resnet18(weights='DEFAULT')
-num_features = net.fc.in_features
-net.fc = nn.Linear(num_features, 4)
+net, loss_func, opt = config_loader(config)
+transform = transforms.Compose([
+    transforms.RandomResizedCrop(224),
+    transforms.RandomHorizontalFlip(),
+    transforms.ColorJitter(brightness=0.5, contrast=0.5),
+    transforms.ToTensor()
+])
+net.to(device)
+test_kmean_accuracy(net.backbone, DataLoader(test_dataset, batch_size=config['batch_size']), device)
+net.train()
 
-loss = nn.CrossEntropyLoss()
-opt = torch.optim.SGD(net.parameters(), lr=0.001)
+training_loss_values = []  # store every training loss value
+validation_loss_values = []  # store every validation loss value
 
-# for epoch in tqdm(range(config['epochs'])):
+for epoch in range(int(config['epochs'])):
+    pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
+    for x_batch, _, _ in train_dataloader:
+        augmented_views = torch.cat([transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
 
-for x_batch, y_batch, id_batch in tqdm(dataset_loader):
-    opt.zero_grad()
-    y_pred = net(x_batch.to(torch.float)).softmax(dim=1)
-    l = loss(y_pred, y_batch)
+        out_feat = net.forward(augmented_views.to(torch.float))
+        loss = loss_func(out_feat, device)
 
-    l.backward()
-    opt.step()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        training_loss_values.append(loss.item())
 
-# print(f"Train val at epoch-{epoch}: {l}")
-pred = 0
-with torch.no_grad():
-    for x_batch, y_batch, id_batch in tqdm(DataLoader(test_dataset, batch_size=config['batch_size'])):
-        y_pred = net(x_batch.to(torch.float)).softmax(dim=1).argmax(dim=1)
-        pred += (y_pred == y_batch).sum()
+        pbar.update(1)
+        pbar.set_postfix({'Loss': loss.item()})
 
+    if (epoch + 1) % int(config['evaluation_freq']) == 0:
+        print(f"Running Validation...")
+        validation_loss_values += validation_loss(net, DataLoader(test_dataset, batch_size=config['batch_size']),
+                                                  device, transform, loss_func)
+
+    if (epoch + 1) % int(config['model_save_freq']) == 0:
+        save_model(epoch, net, training_loss_values, validation_loss_values, config['Batch_size'], config['opt'])
+
+test_kmean_accuracy(net.backbone, DataLoader(test_dataset, batch_size=config['batch_size']), device)

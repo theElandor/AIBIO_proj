@@ -1,0 +1,10 @@
+batch_size: 16
+dataset_dir: /home/nicola/Downloads/data
+checkpoint_dir: /home/nicola/Desktop/checkpoints
+device: cpu
+epochs: 1
+net: simclr
+loss: contrastive
+opt: adam
+evaluation_freq: 4
+model_save_freq: 4

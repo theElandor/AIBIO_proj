@@ -1,4 +1,0 @@
-batch_size: 16
-dataset_dir: /home/nicola/Downloads/data
-device: cpu
-epochs: 1
