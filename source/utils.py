@@ -67,10 +67,10 @@ def test_kmean_accuracy(net, test_loader, device):
         for x_batch, y_batch, _ in tqdm(test_loader):  # Suppongo tu abbia le etichette nel test set
             features = net(x_batch.to(torch.float).to(device))  # Estrazione delle feature
             test_features.append(features)
-            test_labels.append(y_batch)
+            test_labels.append(y_batch.to(device))
 
-    test_features = torch.cat(test_features)
-    test_labels = torch.cat(test_labels)
+    test_features = torch.cat(test_features).cpu()
+    test_labels = torch.cat(test_labels).cpu()
     kmeans = KMeans(n_clusters=4, random_state=42)
     predicted_clusters = kmeans.fit_predict(test_features)
     cluster_to_class = {}

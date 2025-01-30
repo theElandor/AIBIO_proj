@@ -1,4 +1,5 @@
 import os, sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from torch.utils.data import DataLoader, random_split
@@ -8,6 +9,7 @@ import yaml, torchvision
 import utils, torch, sys
 import torch.nn as nn
 import torchvision.transforms.v2 as transforms
+
 from source.utils import *
 
 torch.manual_seed(42)
@@ -28,9 +30,8 @@ train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'])
 net, loss_func, opt = config_loader(config)
 transform = transforms.Compose([
     transforms.RandomResizedCrop(224),
-    transforms.RandomHorizontalFlip(),
     transforms.ColorJitter(brightness=0.5, contrast=0.5),
-    transforms.ToTensor()
+    transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
 ])
 net.to(device)
 test_kmean_accuracy(net.backbone, DataLoader(test_dataset, batch_size=config['batch_size']), device)

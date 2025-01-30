@@ -1,8 +1,8 @@
-batch_size: 32
+batch_size: 128
 dataset_dir: /work/ai4bio2024/rxrx1
 checkpoint_dir: /homes/nmorelli/checkpoints/simclr
 device: gpu
-epochs: 12
+epochs: 6
 net: simclr
 loss: contrastive
 opt: adam
