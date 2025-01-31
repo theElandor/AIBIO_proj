@@ -64,6 +64,7 @@ for epoch in range(int(config['epochs'])):
                                                   device, transform, loss_func)
 
     if (epoch + 1) % int(config['model_save_freq']) == 0:
-        save_model(epoch, net, training_loss_values, validation_loss_values, config['Batch_size'], config['opt'])
+        save_model(epoch, net, training_loss_values, validation_loss_values, config['batch_size'], config['opt'])
+        test_kmean_accuracy(net.backbone, DataLoader(test_dataset, batch_size=config['batch_size']), device)
 
-test_kmean_accuracy(net.backbone, DataLoader(test_dataset, batch_size=config['batch_size']), device)
+
