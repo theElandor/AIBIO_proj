@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
       {
-        "label": "Python Script",
+        "label": "Train Script",
         "type": "shell",
         "command": "/usr/local/anaconda3/bin/python3",
         "args": [
@@ -13,12 +13,11 @@
           "kind": "build",
           "isDefault": true
         },
-        "isBackground": true,
         "presentation": {
           "echo": true,
           "reveal": "always",
           "focus": false,
-          "panel": "dedicated"
+          "panel": "shared"
         },
         "problemMatcher": []
       }
