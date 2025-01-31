@@ -2,10 +2,11 @@ batch_size: 128
 dataset_dir: /work/ai4bio2024/rxrx1
 checkpoint_dir: /work/ai4bio2024/rxrx1/checkpoints/simclr
 device: gpu
-epochs: 4
+epochs: 1000
 net: simclr
 loss: NCE
 opt: adam
 evaluation_freq: 4
 model_save_freq: 4
 multiple_gpus: True
+# load_checkpoint: /homes/nmorelli/checkpoints/simclr/checkpoint778
