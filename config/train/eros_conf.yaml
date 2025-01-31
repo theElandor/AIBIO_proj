@@ -1,0 +1,11 @@
+batch_size: 16
+dataset_dir: D:\Datasets
+checkpoint_dir: D:\Datasets\checkpoints
+device: gpu
+epochs: 1
+net: simclr
+loss: NCE
+opt: adam
+evaluation_freq: 4
+model_save_freq: 4
+multiple_gpus: False
