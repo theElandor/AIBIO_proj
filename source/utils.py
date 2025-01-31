@@ -49,6 +49,7 @@ def contrastive_loss(features, device, temperature=0.5):
     loss = F.cross_entropy(similarity_matrix, labels)
     return loss
 
+
 def info_nce_loss(features, device, temperature=0.5):
     """
     Implements Noise Contrastive Estimation loss as explained in the simCLR paper.
@@ -61,7 +62,7 @@ def info_nce_loss(features, device, temperature=0.5):
         - temperature: float
     """
     n_views = 2
-    assert features.shape[0] % n_views == 0 # make sure shapes are correct
+    assert features.shape[0] % n_views == 0  # make sure shapes are correct
     batch_size = features.shape[0] // n_views
 
     labels = torch.cat([torch.arange(batch_size) for i in range(n_views)], dim=0)
@@ -100,7 +101,7 @@ def config_loader(config):
         net = SimCLR()
 
     if str(config["loss"]).__contains__("contrastive"):
-        loss = contrastive_loss    
+        loss = contrastive_loss
     if str(config["loss"]).__contains__("NCE"):
         loss = info_nce_loss
 
@@ -160,9 +161,7 @@ def validation_loss(net, val_loader, device, transform, loss_func):
     return validation_loss_values
 
 
-def save_model(
-    epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir, optimizer
-):
+def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir, optimizer):
     torch.save(
         {
             "epoch": epoch,

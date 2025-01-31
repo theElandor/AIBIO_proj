@@ -1,18 +1,15 @@
-import torch
-import utils
-import torchvision
-import yaml
+import os, sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import torch, utils, torchvision, yaml
 from source.utils import *
 import torchvision.transforms.v2 as transforms
 import torch.nn as nn
 from source.dataset import Rxrx1
 from tqdm import tqdm
 from torch.utils.data import DataLoader, random_split
-import os
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+from pathlib import Path
 
 torch.manual_seed(42)
 
@@ -22,6 +19,12 @@ def load_yaml():
     with open(inFile, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     display_configs(config)
+
+    assert Path(config['checkpoint_dir']).is_dir(), "Please provide a valid directory to save checkpoints in."
+    assert Path(config['dataset_dir']).is_dir(), "Please provide a valid directory to load dataset."
+    if 'load_checkpoint' in config.keys():
+        assert Path(config['load_checkpoint']).is_dir(), "Please provide a valid directory to load dataset."
+
     return config
 
 
@@ -66,8 +69,6 @@ class Trainer():
         train_dataloader = DataLoader(
             train_dataset, batch_size=config['batch_size'])
 
-
-
         if 'load_checkpoint' in self.config.keys():
             print('Loading latest checkpoint... ')
             last_epoch, training_loss_values, validation_loss_values = self.load_checkpoint()
@@ -107,10 +108,9 @@ class Trainer():
                                                           self.device, transform, self.loss_func)
 
             if (epoch + 1) % int(self.config['model_save_freq']) == 0:
-                save_model(epoch, self.net, self.opt, training_loss_values,
-                           validation_loss_values, self.config['batch_size'], self.config['checkpoint_dir'], self.config['opt'])
-                test_kmean_accuracy(self.net.backbone, DataLoader(
-                    test_dataset, batch_size=self.config['batch_size']), self.device)
+                save_model(epoch, self.net, self.opt, training_loss_values, validation_loss_values,
+                           self.config['batch_size'], self.config['checkpoint_dir'], self.config['opt'])
+                test_kmean_accuracy(self.net.backbone, DataLoader(test_dataset, batch_size=self.config['batch_size']), self.device)
 
         return training_loss_values, validation_loss_values
 
@@ -130,11 +130,9 @@ if __name__ == "__main__":
         transforms.RandomResizedCrop(256),
         transforms.ColorJitter(brightness=0.5, contrast=0.5),
         transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
-        transforms.Compose(
-            [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
+        transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
     ])
 
     tr_ = Trainer(net, device, config, opt, loss_func)
 
-    training_loss_values, validation_loss_values = tr_.train(
-        [0.7, 0.15, 0.15], dataset, transform)
+    training_loss_values, validation_loss_values = tr_.train([0.7, 0.15, 0.15], dataset, transform)

@@ -2,7 +2,7 @@ batch_size: 128
 dataset_dir: /work/ai4bio2024/rxrx1
 checkpoint_dir: /work/ai4bio2024/rxrx1/checkpoints/simclr
 device: gpu
-epochs: 1000
+epochs: 4
 net: simclr
 loss: NCE
 opt: adam
