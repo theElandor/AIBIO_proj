@@ -1,4 +1,4 @@
-batch_size: 16
+batch_size: 8
 dataset_dir: /work/ai4bio2024/rxrx1
 checkpoint_dir: /homes/nmorelli/checkpoints/simclr
 device: gpu

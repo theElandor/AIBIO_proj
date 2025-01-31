@@ -1,4 +1,4 @@
-batch_size: 16
+batch_size: 8
 dataset_dir: /home/nicola/Downloads/data
 checkpoint_dir: /home/nicola/Desktop/checkpoints
 device: cpu
