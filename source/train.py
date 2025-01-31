@@ -4,11 +4,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
-from dataset import Rxrx1
+from source.dataset import Rxrx1
 import yaml, torchvision
 import utils, torch, sys
 import torch.nn as nn
 import torchvision.transforms.v2 as transforms
+
+
 
 from source.utils import *
 
@@ -16,7 +18,7 @@ torch.manual_seed(42)
 inFile = sys.argv[1]
 with open(inFile, "r") as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
-utils.display_configs(config)
+display_configs(config)
 device = load_device(config)
 dataset = Rxrx1(config['dataset_dir'])
 

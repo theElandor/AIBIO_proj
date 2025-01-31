@@ -1,0 +1,26 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Train Script",
+        "type": "shell",
+        "command": "/usr/local/anaconda3/bin/python3",
+        "args": [
+          "${file}",
+          "/homes/nmorelli/AIBIO_proj/config/train/server_conf.yaml"
+        ],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        },
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": false,
+          "panel": "shared"
+        },
+        "problemMatcher": []
+      }
+    ]
+  }
+  

@@ -9,3 +9,5 @@ opt: adam
 evaluation_freq: 4
 model_save_freq: 4
 multiple_gpus: False
+
+#salloc --gres=gpu:1 --time=04:00:00 --partition=all_serial --mem=10G --account=ai4bio2024
