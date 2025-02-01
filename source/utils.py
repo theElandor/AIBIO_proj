@@ -1,4 +1,5 @@
 import os, sys
+import torchvision.transforms.v2 as transforms
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -8,10 +9,12 @@ import torch
 import torch.nn.functional as F
 import os
 from source.net import SimCLR
+from source.net import FcHead
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 import numpy as np
 from scipy.stats import mode
+from typing import Callable
 
 
 def display_configs(configs):
@@ -94,21 +97,54 @@ def info_nce_loss(features, device, temperature=0.5):
     logits = logits / temperature
     return F.cross_entropy(logits, labels)
 
+def load_net(netname: str, options={}) -> torch.nn.Module:
+    if netname == "simclr":
+        return SimCLR()
+    if netname == "fc_head":
+        return FcHead(num_classes=options["num_classes"])
+    else:
+        raise ValueError("Invalid netname")
+
+def load_loss(lossname: str) -> Callable:
+    if lossname == "contrastive":
+        return contrastive_loss
+    elif lossname == "NCE":
+        return info_nce_loss
+    else:
+        raise ValueError("Invalid lossname")
+
+def load_opt(optimizer: str, net: torch.nn.Module) -> torch.optim.Optimizer:
+    if optimizer == "adam":
+        return torch.optim.Adam(net.parameters(), lr=0.005)
+    else:
+        raise ValueError("Invalid optimizer")
 
 def config_loader(config):
-    net, loss, opt = ..., ..., ...
-    if str(config["net"]).__contains__("simclr"):
-        net = SimCLR()
-
-    if str(config["loss"]).__contains__("contrastive"):
-        loss = contrastive_loss
-    if str(config["loss"]).__contains__("NCE"):
-        loss = info_nce_loss
-
-    if str(config["opt"]).__contains__("adam"):
-        opt = torch.optim.Adam(net.parameters(), lr=0.005)
-
+    net = load_net(config["net"])
+    loss = load_loss(config["loss"])
+    opt = load_opt(config["opt"], net)
     return (net, loss, opt)
+
+
+def sim_clr_processing(device: torch.device, x_batch: torch.Tensor, net: torch.nn.Module, loss_func: Callable):
+    # no transformations
+    std_transform = transforms.Compose(
+        [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
+    # view for self supervised learning
+    transform = transforms.Compose([
+        transforms.RandomResizedCrop(256),
+        transforms.ColorJitter(brightness=0.5, contrast=0.5),
+        transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
+        transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
+    ])
+    standard_views = torch.cat(
+        [std_transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
+    augmented_views = torch.cat(
+        [transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
+    block = torch.cat([standard_views, augmented_views], dim=0)
+    out_feat = net.forward(block.to(torch.float))
+    loss = loss_func(out_feat, device)
+    return loss
 
 
 def test_kmean_accuracy(net, test_loader, device):
@@ -142,19 +178,12 @@ def test_kmean_accuracy(net, test_loader, device):
     print(f"Test Accuracy: {accuracy * 100:.2f}%")
 
 
-def validation_loss(net, val_loader, device, transform, std_transform, loss_func):
+def validation_loss(net, val_loader, device, loss_func):
     validation_loss_values = []
     pbar = tqdm(total=len(val_loader), desc=f"validation")
     with net.eval() and torch.no_grad():
         for x_batch, _, _ in val_loader:
-            standard_views = torch.cat(
-                [std_transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
-            augmented_views = torch.cat(
-                [transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
-            block = torch.cat([standard_views, augmented_views], dim=0)
-            out_feat = net.forward(block.to(torch.float))
-            loss = loss_func(out_feat, device)
-
+            loss = sim_clr_processing(device, x_batch, net, loss_func)
             validation_loss_values.append(loss.item())
             pbar.update(1)
             pbar.set_postfix({"Validation Loss": loss.item()})
