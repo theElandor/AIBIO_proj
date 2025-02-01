@@ -66,9 +66,6 @@ class Trainer():
         train_dataset, val_dataset, test_dataset = random_split(
             dataset, [train_size, val_size, test_size])
 
-        train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                      shuffle=True, num_workers=8, drop_last=True, prefetch_factor=1)
-
         if 'load_checkpoint' in self.config.keys():
             print('Loading latest checkpoint... ')
             last_epoch, training_loss_values, validation_loss_values = self.load_checkpoint()
@@ -84,7 +81,10 @@ class Trainer():
             self.net = nn.DataParallel(self.net)
 
         for epoch in range(last_epoch, int(self.config['epochs'])):
+            train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
+                                          shuffle=True, num_workers=6, drop_last=True, prefetch_factor=2)
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
+
             for x_batch, _, _ in train_dataloader:
                 standard_views = torch.cat(
                     [std_transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
