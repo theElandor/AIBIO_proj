@@ -97,6 +97,27 @@ def info_nce_loss(features, device, temperature=0.5):
     logits = logits / temperature
     return F.cross_entropy(logits, labels)
 
+def load_net(netname: str, options={}) -> torch.nn.Module:
+    if netname == "simclr":
+        return SimCLR()
+    if netname == "fc_head":
+        return FcHead(num_classes=options["num_classes"])
+    else:
+        raise ValueError("Invalid netname")
+
+def load_loss(lossname: str) -> Callable:
+    if lossname == "contrastive":
+        return contrastive_loss
+    elif lossname == "NCE":
+        return info_nce_loss
+    else:
+        raise ValueError("Invalid lossname")
+
+def load_opt(optimizer: str, net: torch.nn.Module) -> torch.optim.Optimizer:
+    if optimizer == "adam":
+        return torch.optim.Adam(net.parameters(), lr=0.005)
+    else:
+        raise ValueError("Invalid optimizer")
 
 def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr":
