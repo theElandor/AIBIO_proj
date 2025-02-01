@@ -106,7 +106,7 @@ def config_loader(config):
         loss = info_nce_loss
 
     if str(config["opt"]).__contains__("adam"):
-        opt = torch.optim.Adam(net.parameters(), lr=0.005)
+        opt = torch.optim.Adam(net.parameters(), lr=0.1)
 
     return (net, loss, opt)
 
