@@ -4,7 +4,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch, utils, torchvision, yaml
 from source.utils import *
-import torchvision.transforms.v2 as transforms
 import torch.nn as nn
 from source.dataset import Rxrx1
 from tqdm import tqdm
@@ -58,13 +57,18 @@ class Trainer():
         config['batch_size'] = checkpoint['batch_size']
         return (last_epoch, training_loss_values, validation_loss_values)
 
-    def train(self, split_sizes, dataset, transform, std_transform):
+    def train(self, split_sizes, dataset):
+        train_workers = self.config["train_workers"]
+        evaluation_workers = self.config["evaluation_workers"]
         device = self.device
         train_size = int(split_sizes[0] * len(dataset))
         val_size = int(split_sizes[1] * len(dataset))
         test_size = len(dataset) - train_size - val_size
         train_dataset, val_dataset, test_dataset = random_split(
             dataset, [train_size, val_size, test_size])
+
+        train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
+                                      shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=1)
 
         if 'load_checkpoint' in self.config.keys():
             print('Loading latest checkpoint... ')
@@ -81,19 +85,10 @@ class Trainer():
             self.net = nn.DataParallel(self.net)
 
         for epoch in range(last_epoch, int(self.config['epochs'])):
-            train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                          shuffle=True, num_workers=6, drop_last=True, prefetch_factor=2)
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
 
             for x_batch, _, _ in train_dataloader:
-                standard_views = torch.cat(
-                    [std_transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
-                augmented_views = torch.cat(
-                    [transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
-                block = torch.cat([standard_views, augmented_views], dim=0)
-                out_feat = self.net.forward(block.to(torch.float))
-                loss = self.loss_func(out_feat, device)
-
+                loss = sim_clr_processing(device, x_batch, self.net, self.loss_func)
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
@@ -110,13 +105,12 @@ class Trainer():
                 else:
                     backbone = self.net.backbone
                 test_kmean_accuracy(backbone, DataLoader(test_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                                         shuffle=True, num_workers=4, drop_last=True, prefetch_factor=1), self.device)
+                                                         shuffle=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=1), self.device)
 
             if (epoch + 1) % int(self.config['evaluation_freq']) == 0:
                 print(f"Running Validation...")
                 validation_loss_values += validation_loss(self.net, DataLoader(val_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                                                               shuffle=True, num_workers=4, drop_last=True, prefetch_factor=1), self.device, transform, std_transform, self.loss_func)
-
+                                                                               shuffle=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=1), self.device, self.loss_func)
         return training_loss_values, validation_loss_values
 
 
@@ -127,17 +121,6 @@ if __name__ == "__main__":
     dataset = Rxrx1(config['dataset_dir'])
     net, loss_func, opt = config_loader(config)
 
-    # no transformations
-    std_transform = transforms.Compose(
-        [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
-    # view for self supervised learning
-    transform = transforms.Compose([
-        transforms.RandomResizedCrop(256),
-        transforms.ColorJitter(brightness=0.5, contrast=0.5),
-        transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
-        transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
-    ])
-
     tr_ = Trainer(net, device, config, opt, loss_func)
 
-    training_loss_values, validation_loss_values = tr_.train([0.7, 0.15, 0.15], dataset, transform, std_transform)
+    training_loss_values, validation_loss_values = tr_.train([0.7, 0.15, 0.15], dataset)
