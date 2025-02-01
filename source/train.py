@@ -44,12 +44,6 @@ class Trainer():
             model_dict = checkpoint['model_state_dict']
         self.net.load_state_dict(model_dict)
 
-        # if self.config['multiple_gpus']:
-        #     model_dict = {key.replace("module.", ""): value for key, value in checkpoint['model_state_dict'].items()}
-        #     self.net.load_state_dict(model_dict)
-        # else:
-        #     self.net.load_state_dict(checkpoint['model_state_dict'])
-
         self.opt.load_state_dict(checkpoint['optimizer_state_dict'])
         try:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
@@ -69,8 +63,7 @@ class Trainer():
         train_size = int(split_sizes[0] * len(dataset))
         val_size = int(split_sizes[1] * len(dataset))
         test_size = len(dataset) - train_size - val_size
-        train_dataset, val_dataset, test_dataset = random_split(
-            dataset, [train_size, val_size, test_size])
+        train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
                                       shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=1)
@@ -93,7 +86,7 @@ class Trainer():
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
 
             for x_batch, _, _ in train_dataloader:
-                loss = sim_clr_processing(device, x_batch, self.net, self.loss_func)               
+                loss = sim_clr_processing(device, x_batch, self.net, self.loss_func)
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
