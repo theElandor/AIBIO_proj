@@ -142,16 +142,17 @@ def test_kmean_accuracy(net, test_loader, device):
     print(f"Test Accuracy: {accuracy * 100:.2f}%")
 
 
-def validation_loss(net, val_loader, device, transform, loss_func):
+def validation_loss(net, val_loader, device, transform, std_transform, loss_func):
     validation_loss_values = []
     pbar = tqdm(total=len(val_loader), desc=f"validation")
     with net.eval() and torch.no_grad():
         for x_batch, _, _ in val_loader:
+            standard_views = torch.cat(
+                [std_transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
             augmented_views = torch.cat(
-                [transform(img.unsqueeze(0)) for img in x_batch], dim=0
-            ).to(device)
-
-            out_feat = net.forward(augmented_views.to(torch.float))
+                [transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
+            block = torch.cat([standard_views, augmented_views], dim=0)
+            out_feat = net.forward(block.to(torch.float))
             loss = loss_func(out_feat, device)
 
             validation_loss_values.append(loss.item())

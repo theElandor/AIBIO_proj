@@ -58,16 +58,16 @@ class Trainer():
         config['batch_size'] = checkpoint['batch_size']
         return (last_epoch, training_loss_values, validation_loss_values)
 
-    def train(self, split_sizes, dataset, transform):
-
+    def train(self, split_sizes, dataset, transform, std_transform):
+        device = self.device
         train_size = int(split_sizes[0] * len(dataset))
         val_size = int(split_sizes[1] * len(dataset))
         test_size = len(dataset) - train_size - val_size
         train_dataset, val_dataset, test_dataset = random_split(
             dataset, [train_size, val_size, test_size])
 
-        train_dataloader = DataLoader(
-            train_dataset, batch_size=config['batch_size'])
+        train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], pin_memory_device=self.device, pin_memory=True,
+                                      shuffle=True, num_workers=4, drop_last=True, prefetch_factor=1)
 
         if 'load_checkpoint' in self.config.keys():
             print('Loading latest checkpoint... ')
@@ -87,7 +87,7 @@ class Trainer():
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
             for x_batch, _, _ in train_dataloader:
                 standard_views = torch.cat(
-                    [standard(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
+                    [std_transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
                 augmented_views = torch.cat(
                     [transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
                 block = torch.cat([standard_views, augmented_views], dim=0)
@@ -102,15 +102,16 @@ class Trainer():
                 pbar.update(1)
                 pbar.set_postfix({'Loss': loss.item()})
 
-            if (epoch + 1) % int(config['evaluation_freq']) == 0:
-                print(f"Running Validation...")
-                validation_loss_values += validation_loss(self.net, DataLoader(val_dataset, batch_size=self.config['batch_size']),
-                                                          self.device, transform, self.loss_func)
-
             if (epoch + 1) % int(self.config['model_save_freq']) == 0:
                 save_model(epoch, self.net, self.opt, training_loss_values, validation_loss_values,
                            self.config['batch_size'], self.config['checkpoint_dir'], self.config['opt'])
-                test_kmean_accuracy(self.net.backbone, DataLoader(test_dataset, batch_size=self.config['batch_size']), self.device)
+                test_kmean_accuracy(self.net.backbone, DataLoader(test_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
+                                                                  shuffle=True, num_workers=4, drop_last=True, prefetch_factor=1), self.device)
+
+            if (epoch + 1) % int(config['evaluation_freq']) == 0:
+                print(f"Running Validation...")
+                validation_loss_values += validation_loss(self.net, DataLoader(val_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
+                                                                               shuffle=True, num_workers=4, drop_last=True, prefetch_factor=1), self.device, transform, std_transform, self.loss_func)
 
         return training_loss_values, validation_loss_values
 
@@ -123,7 +124,7 @@ if __name__ == "__main__":
     net, loss_func, opt = config_loader(config)
 
     # no transformations
-    standard = transforms.Compose(
+    std_transform = transforms.Compose(
         [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
     # view for self supervised learning
     transform = transforms.Compose([
@@ -135,4 +136,4 @@ if __name__ == "__main__":
 
     tr_ = Trainer(net, device, config, opt, loss_func)
 
-    training_loss_values, validation_loss_values = tr_.train([0.7, 0.15, 0.15], dataset, transform)
+    training_loss_values, validation_loss_values = tr_.train([0.7, 0.15, 0.15], dataset, transform, std_transform)
