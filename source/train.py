@@ -38,12 +38,17 @@ class Trainer():
 
     def load_checkpoint(self):
         checkpoint = torch.load(self.config['load_checkpoint'])
-        if self.config['multiple_gpus']:
-            model_dict = {key.replace(
-                "module.", ""): value for key, value in checkpoint['model_state_dict'].items()}
-            self.net.load_state_dict(model_dict)
+        if list(checkpoint['model_state_dict'])[0].__contains__('module'):
+            model_dict = {key.replace("module.", ""): value for key, value in checkpoint['model_state_dict'].items()}
         else:
-            self.net.load_state_dict(checkpoint['model_state_dict'])
+            model_dict = checkpoint['model_state_dict']
+        self.net.load_state_dict(model_dict)
+
+        # if self.config['multiple_gpus']:
+        #     model_dict = {key.replace("module.", ""): value for key, value in checkpoint['model_state_dict'].items()}
+        #     self.net.load_state_dict(model_dict)
+        # else:
+        #     self.net.load_state_dict(checkpoint['model_state_dict'])
 
         self.opt.load_state_dict(checkpoint['optimizer_state_dict'])
         try:
@@ -109,8 +114,8 @@ class Trainer():
 
             if (epoch + 1) % int(self.config['evaluation_freq']) == 0:
                 print(f"Running Validation...")
-                validation_loss_values += validation_loss(self.net, DataLoader(val_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                                                               shuffle=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=1), self.device, self.loss_func)
+                validation_loss_values += validation_loss(self.net, DataLoader(val_dataset, batch_size=self.config['batch_size'],
+                                                                               pin_memory_device=self.device, pin_memory=True, shuffle=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=1), self.device, self.loss_func)
         return training_loss_values, validation_loss_values
 
 

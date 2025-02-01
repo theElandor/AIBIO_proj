@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 import os
 from source.net import SimCLR
-from source.net import FcHead
+# from source.net import FcHead
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 import numpy as np
@@ -101,8 +101,8 @@ def info_nce_loss(features, device, temperature=0.5):
 def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr":
         return SimCLR()
-    if netname == "fc_head":
-        return FcHead(num_classes=options["num_classes"])
+    # if netname == "fc_head":
+    #     return FcHead(num_classes=options["num_classes"])
     else:
         raise ValueError("Invalid netname")
 
