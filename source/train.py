@@ -86,8 +86,9 @@ class Trainer():
 
         for epoch in range(last_epoch, int(self.config['epochs'])):
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
+
             for x_batch, _, _ in train_dataloader:
-                loss = sim_clr_processing(device, x_batch, self.net, self.loss_func)                
+                loss = sim_clr_processing(device, x_batch, self.net, self.loss_func)               
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
