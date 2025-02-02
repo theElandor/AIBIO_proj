@@ -35,8 +35,7 @@ class Trainer():
         train_size = int(split_sizes[0] * len(dataset))
         val_size = int(split_sizes[1] * len(dataset))
         test_size = len(dataset) - train_size - val_size
-        train_dataset, val_dataset, test_dataset = random_split(
-            dataset, [train_size, val_size, test_size])
+        train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
                                       shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=1)

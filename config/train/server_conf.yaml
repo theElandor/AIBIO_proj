@@ -9,4 +9,6 @@ opt: adam
 evaluation_freq: 4
 model_save_freq: 4
 multiple_gpus: True
-# load_checkpoint: /work/ai4bio2024/rxrx1/checkpoints/simclr/checkpoint4
+# load_checkpoint: /work/ai4bio2024/ssrxrx1/checkpoints/simclr/checkpoint4
+train_workers: 8
+evaluation_workers: 8
