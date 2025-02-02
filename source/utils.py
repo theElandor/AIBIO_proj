@@ -8,14 +8,24 @@ from wilds import get_dataset
 import torch
 import torch.nn.functional as F
 import os
-from source.net import SimCLR
-from source.net import FcHead
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 import numpy as np
 from scipy.stats import mode
 from typing import Callable
+import yaml
+from pathlib import Path
 
+
+def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:   
+    """!Load only network weights from checkpoint."""
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    if list(checkpoint['model_state_dict'])[0].__contains__('module'):
+        model_dict = {key.replace("module.", ""): value for key, value in checkpoint['model_state_dict'].items()}
+    else:
+        model_dict = checkpoint['model_state_dict']
+    net.load_state_dict(model_dict)
+    return checkpoint
 
 def display_configs(configs):
     t = PrettyTable(["Name", "Value"])
@@ -99,9 +109,15 @@ def info_nce_loss(features, device, temperature=0.5):
 
 def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr":
+        from source.net import SimCLR
         return SimCLR()
     if netname == "fc_head":
-        return FcHead(num_classes=options["num_classes"])
+        from source.net import FcHead
+        return FcHead()
+    if netname == "cell_classifier":
+        from source.net import CellClassifier
+        return CellClassifier(options["backbone"], options["head"])
+
     else:
         raise ValueError("Invalid netname")
 
@@ -110,6 +126,8 @@ def load_loss(lossname: str) -> Callable:
         return contrastive_loss
     elif lossname == "NCE":
         return info_nce_loss
+    if lossname == "cross_entropy":
+        return F.cross_entropy
     else:
         raise ValueError("Invalid lossname")
 
@@ -119,14 +137,41 @@ def load_opt(optimizer: str, net: torch.nn.Module) -> torch.optim.Optimizer:
     else:
         raise ValueError("Invalid optimizer")
 
+def load_yaml():
+    inFile = sys.argv[1]
+    with open(inFile, "r") as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    display_configs(config)
+
+    assert Path(config['checkpoint_dir']).is_dir(), "Please provide a valid directory to save checkpoints in."
+    assert Path(config['dataset_dir']).is_dir(), "Please provide a valid directory to load dataset."
+    if 'load_checkpoint' in config.keys():
+        assert Path(config['load_checkpoint']).is_file(), "Please provide a valid file to load checkpoint."
+
+    return config
+
+def classifier_loader(config):
+    backbone = load_net(config['backbone'])
+    head = load_net(config['head'], options={'num_classes': 4})
+    return backbone, head
+
 def config_loader(config):
-    net = load_net(config["net"])
+    options = {}
+    if 'backbone' in config:
+        backbone = load_net(config['backbone'])        
+        options["backbone"] = backbone
+    if 'head' in config:
+        head = load_net(config['head'])
+        options["head"] = head
+
+    net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
     opt = load_opt(config["opt"], net)
     return (net, loss, opt)
 
-
-def sim_clr_processing(device: torch.device, x_batch: torch.Tensor, net: torch.nn.Module, loss_func: Callable):
+# Losser (loss calculator) for self supervised learning with simCLR
+def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
+    x_batch, _, _ = data
     # no transformations
     std_transform = transforms.Compose(
         [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
@@ -144,6 +189,13 @@ def sim_clr_processing(device: torch.device, x_batch: torch.Tensor, net: torch.n
     block = torch.cat([standard_views, augmented_views], dim=0)
     out_feat = net.forward(block.to(torch.float))
     loss = loss_func(out_feat, device)
+    return loss
+
+# Losser for supervised learning. Classification of cell types
+def cell_type_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
+    x_batch, cell_type_batch, siRNA_batch = data
+    out_feat = net(x_batch.to(torch.float).to(device))
+    loss = loss_func(out_feat, cell_type_batch.to(device))
     return loss
 
 
@@ -178,12 +230,12 @@ def test_kmean_accuracy(net, test_loader, device):
     print(f"Test Accuracy: {accuracy * 100:.2f}%")
 
 
-def validation_loss(net, val_loader, device, loss_func):
+def validation_loss(net, val_loader, device, loss_func, losser):
     validation_loss_values = []
     pbar = tqdm(total=len(val_loader), desc=f"validation")
     with net.eval() and torch.no_grad():
-        for x_batch, _, _ in val_loader:
-            loss = sim_clr_processing(device, x_batch, net, loss_func)
+        for x_batch, cell_type_batch, siRNA_batch, in val_loader:
+            loss = losser(device, (x_batch, cell_type_batch, siRNA_batch), net, loss_func)
             validation_loss_values.append(loss.item())
             pbar.update(1)
             pbar.set_postfix({"Validation Loss": loss.item()})
@@ -192,6 +244,7 @@ def validation_loss(net, val_loader, device, loss_func):
 
 
 def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir, optimizer):
+    name = os.path.join(checkpoint_dir, "checkpoint{}".format(epoch + 1))
     torch.save(
         {
             "epoch": epoch,
@@ -202,5 +255,6 @@ def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir
             "batch_size": batch_size,
             "optimizer": optimizer,
         },
-        os.path.join(checkpoint_dir, "checkpoint{}".format(epoch + 1)),
+        name    
     )
+    print(f"Model saved in {name}.")
