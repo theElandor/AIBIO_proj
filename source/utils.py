@@ -157,12 +157,6 @@ def load_yaml():
     return config
 
 
-# def classifier_loader(config):
-#     backbone = load_net(config['backbone'])
-#     head = load_net(config['head'], options={'num_classes': 4})
-#     return backbone, head
-
-
 def config_loader(config):
     options = {}
     if 'backbone' in config:

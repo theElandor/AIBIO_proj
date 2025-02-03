@@ -38,7 +38,7 @@ class Trainer():
         train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                      shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=1)
+                                      shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=2)
 
         if 'load_checkpoint' in self.config.keys():
             print('Loading latest checkpoint... ')
