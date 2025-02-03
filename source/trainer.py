@@ -4,6 +4,7 @@ from source.utils import *
 from torch.utils.data import DataLoader, random_split
 import torch.nn as nn
 
+
 class Trainer():
     def __init__(self, net, device, config, opt, loss_func, scheduler=None):
         self.net = net.to(device)
@@ -12,7 +13,6 @@ class Trainer():
         self.opt = opt
         self.loss_func = loss_func
         self.scheduler = scheduler
-
 
     def load_checkpoint(self):
         checkpoint = load_weights(self.config['load_checkpoint'], self.net, self.device)
@@ -48,7 +48,7 @@ class Trainer():
             last_epoch = 0
             training_loss_values = []  # store every training loss value
             validation_loss_values = []  # store every validation loss value
-        
+
         self.net.train()
         if self.config['multiple_gpus']:
             self.net = nn.DataParallel(self.net)
@@ -64,16 +64,11 @@ class Trainer():
 
                 pbar.update(1)
                 pbar.set_postfix({'Loss': loss.item()})
+                sys.stdout.flush()
 
             if (epoch + 1) % int(self.config['model_save_freq']) == 0:
                 save_model(epoch, self.net, self.opt, training_loss_values, validation_loss_values,
                            self.config['batch_size'], self.config['checkpoint_dir'], self.config['opt'])
-                # if self.config['multiple_gpus']:
-                #     backbone = self.net.module.backbone
-                # else:
-                #     backbone = self.net.backbone
-                # test_kmean_accuracy(backbone, DataLoader(test_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                #                                          shuffle=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=1), self.device)
 
             if (epoch + 1) % int(self.config['evaluation_freq']) == 0:
                 print(f"Running Validation...")

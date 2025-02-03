@@ -1,0 +1,24 @@
+# MODEL
+backbone: simclr
+backbone_weights: /work/ai4bio2024/rxrx1/checkpoints/simclr/checkpoint20
+
+head: fc_head
+net: cell_classifier
+
+# DIRECTORIES
+checkpoint_dir: /work/ai4bio2024/rxrx1/checkpoints/simclr_head/
+dataset_dir: /work/ai4bio2024/rxrx1
+
+# TRAINING OPTIONS
+epochs: 4
+batch_size: 256
+loss: cross_entropy
+opt: adam
+evaluation_freq: 1
+model_save_freq: 1
+
+# HARDWARE
+device: gpu
+multiple_gpus: True
+train_workers: 6
+evaluation_workers: 6

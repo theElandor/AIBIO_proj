@@ -17,7 +17,7 @@ import yaml
 from pathlib import Path
 
 
-def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:   
+def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:
     """!Load only network weights from checkpoint."""
     checkpoint = torch.load(checkpoint_path, map_location=device)
     if list(checkpoint['model_state_dict'])[0].__contains__('module'):
@@ -26,6 +26,7 @@ def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.
         model_dict = checkpoint['model_state_dict']
     net.load_state_dict(model_dict)
     return checkpoint
+
 
 def display_configs(configs):
     t = PrettyTable(["Name", "Value"])
@@ -107,19 +108,22 @@ def info_nce_loss(features, device, temperature=0.5):
     logits = logits / temperature
     return F.cross_entropy(logits, labels)
 
+
 def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr":
         from source.net import SimCLR
         return SimCLR()
     if netname == "fc_head":
+        assert 'num_classes' in options.keys(), "Provide parameter 'num_classes' for FCHead!"
         from source.net import FcHead
-        return FcHead()
+        return FcHead(num_classes=options['num_classes'])
     if netname == "cell_classifier":
         from source.net import CellClassifier
         return CellClassifier(options["backbone"], options["head"])
 
     else:
         raise ValueError("Invalid netname")
+
 
 def load_loss(lossname: str) -> Callable:
     if lossname == "contrastive":
@@ -131,11 +135,13 @@ def load_loss(lossname: str) -> Callable:
     else:
         raise ValueError("Invalid lossname")
 
+
 def load_opt(optimizer: str, net: torch.nn.Module) -> torch.optim.Optimizer:
     if optimizer == "adam":
         return torch.optim.Adam(net.parameters(), lr=0.005)
     else:
         raise ValueError("Invalid optimizer")
+
 
 def load_yaml():
     inFile = sys.argv[1]
@@ -150,18 +156,20 @@ def load_yaml():
 
     return config
 
-def classifier_loader(config):
-    backbone = load_net(config['backbone'])
-    head = load_net(config['head'], options={'num_classes': 4})
-    return backbone, head
+
+# def classifier_loader(config):
+#     backbone = load_net(config['backbone'])
+#     head = load_net(config['head'], options={'num_classes': 4})
+#     return backbone, head
+
 
 def config_loader(config):
     options = {}
     if 'backbone' in config:
-        backbone = load_net(config['backbone'])        
+        backbone = load_net(config['backbone'])
         options["backbone"] = backbone
     if 'head' in config:
-        head = load_net(config['head'])
+        head = load_net(config['head'], options={'num_classes': 4})
         options["head"] = head
 
     net = load_net(config["net"], options)
@@ -170,6 +178,8 @@ def config_loader(config):
     return (net, loss, opt)
 
 # Losser (loss calculator) for self supervised learning with simCLR
+
+
 def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
     x_batch, _, _ = data
     # no transformations
@@ -192,6 +202,8 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
     return loss
 
 # Losser for supervised learning. Classification of cell types
+
+
 def cell_type_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
     x_batch, cell_type_batch, siRNA_batch = data
     out_feat = net(x_batch.to(torch.float).to(device))
@@ -255,6 +267,6 @@ def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir
             "batch_size": batch_size,
             "optimizer": optimizer,
         },
-        name    
+        name
     )
     print(f"Model saved in {name}.")

@@ -1,14 +1,21 @@
-batch_size: 256
-dataset_dir: /work/ai4bio2024/rxrx1
-checkpoint_dir: /work/ai4bio2024/rxrx1/checkpoints/simclr
-device: gpu
-epochs: 12
+# MODEL
 net: simclr
+# load_checkpoint: D:\checkpoints\checkpoint4
+
+# DIRECTORIES
+checkpoint_dir: /work/ai4bio2024/rxrx1/checkpoints/simclr/
+dataset_dir: /work/ai4bio2024/rxrx1
+
+# TRAINING OPTIONS
+epochs: 20
+batch_size: 128
 loss: NCE
 opt: adam
 evaluation_freq: 4
-model_save_freq: 4
+model_save_freq: 1
+
+# HARDWARE
+device: gpu
 multiple_gpus: True
-# load_checkpoint: /work/ai4bio2024/ssrxrx1/checkpoints/simclr/checkpoint4
-train_workers: 8
-evaluation_workers: 8
+train_workers: 6
+evaluation_workers: 6
