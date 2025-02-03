@@ -163,7 +163,7 @@ def config_loader(config):
         backbone = load_net(config['backbone'])
         options["backbone"] = backbone
     if 'head' in config:
-        head = load_net(config['head'], options={'num_classes': 4})
+        head = load_net(config['head'], options={'num_classes': 1139})
         options["head"] = head
 
     net = load_net(config["net"], options)
@@ -202,6 +202,13 @@ def cell_type_processing(device: torch.device, data: tuple, net: torch.nn.Module
     x_batch, cell_type_batch, siRNA_batch = data
     out_feat = net(x_batch.to(torch.float).to(device))
     loss = loss_func(out_feat, cell_type_batch.to(device))
+    return loss
+
+
+def perturbations_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
+    x_batch, cell_type_batch, siRNA_batch = data
+    out_feat = net(x_batch.to(torch.float).to(device))
+    loss = loss_func(out_feat, siRNA_batch.to(device))
     return loss
 
 

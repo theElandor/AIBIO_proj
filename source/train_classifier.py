@@ -17,4 +17,4 @@ if __name__ == "__main__":
     net, loss_func, opt = config_loader(config)
     net.freeze_backbone()
     tr_ = Trainer(net, device, config, opt, loss_func)
-    training_loss_values, validation_loss_values = tr_.train([0.7, 0.15, 0.15], dataset, cell_type_processing)
+    training_loss_values, validation_loss_values = tr_.train([0.7, 0.15, 0.15], dataset, perturbations_processing)
