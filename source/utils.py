@@ -138,7 +138,7 @@ def load_loss(lossname: str) -> Callable:
 
 def load_opt(optimizer: str, net: torch.nn.Module) -> torch.optim.Optimizer:
     if optimizer == "adam":
-        return torch.optim.Adam(net.parameters(), lr=0.005)
+        return torch.optim.Adam(net.parameters(), lr=0.0005)
     else:
         raise ValueError("Invalid optimizer")
 
@@ -243,9 +243,9 @@ def test_kmean_accuracy(net, test_loader, device):
     print(f"Test Accuracy: {accuracy * 100:.2f}%")
 
 
-def validation_loss(net, val_loader, device, loss_func, losser):
+def validation_loss(net, val_loader, device, loss_func, losser, epoch):
     validation_loss_values = []
-    pbar = tqdm(total=len(val_loader), desc=f"validation")
+    pbar = tqdm(total=len(val_loader), desc=f"validation-{epoch+1}")
     with net.eval() and torch.no_grad():
         for x_batch, cell_type_batch, siRNA_batch, in val_loader:
             loss = losser(device, (x_batch, cell_type_batch, siRNA_batch), net, loss_func)

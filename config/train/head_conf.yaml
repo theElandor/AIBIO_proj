@@ -10,12 +10,12 @@ checkpoint_dir: /work/ai4bio2024/rxrx1/checkpoints/simclr_head/
 dataset_dir: /work/ai4bio2024/rxrx1
 
 # TRAINING OPTIONS
-epochs: 20
+epochs: 100
 batch_size: 256
 loss: cross_entropy
 opt: adam
 evaluation_freq: 1
-model_save_freq: 1
+model_save_freq: 10
 
 # HARDWARE
 device: gpu

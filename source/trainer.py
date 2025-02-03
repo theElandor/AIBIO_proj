@@ -13,6 +13,7 @@ class Trainer():
         self.opt = opt
         self.loss_func = loss_func
         self.scheduler = scheduler
+        self.gen = torch.Generator().manual_seed(42)
 
     def load_checkpoint(self):
         checkpoint = load_weights(self.config['load_checkpoint'], self.net, self.device)
@@ -35,10 +36,10 @@ class Trainer():
         train_size = int(split_sizes[0] * len(dataset))
         val_size = int(split_sizes[1] * len(dataset))
         test_size = len(dataset) - train_size - val_size
-        train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
+        train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size, generator = self.gen])
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                      shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=2)
+                                      shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
 
         if 'load_checkpoint' in self.config.keys():
             print('Loading latest checkpoint... ')
@@ -64,14 +65,14 @@ class Trainer():
 
                 pbar.update(1)
                 pbar.set_postfix({'Loss': loss.item()})
-                sys.stdout.flush()
 
             if (epoch + 1) % int(self.config['model_save_freq']) == 0:
                 save_model(epoch, self.net, self.opt, training_loss_values, validation_loss_values,
                            self.config['batch_size'], self.config['checkpoint_dir'], self.config['opt'])
 
             if (epoch + 1) % int(self.config['evaluation_freq']) == 0:
-                print(f"Running Validation...")
+                print(f"Running Validation-{str(epoch+1)}...")
                 validation_loss_values += validation_loss(self.net, DataLoader(val_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                                                               shuffle=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=1), self.device, self.loss_func, losser)
+                                                                               shuffle=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=1), self.device, self.loss_func, losser, epoch)
+
         return training_loss_values, validation_loss_values
