@@ -118,6 +118,8 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
         from source.net import FcHead
         return FcHead(num_classes=options['num_classes'])
     if netname == "cell_classifier":
+        assert 'backbone' in options.keys() and 'head' in options.keys(
+        ), "Provide parameter 'backbone' and 'head' for end-to-end train!"
         from source.net import CellClassifier
         return CellClassifier(options["backbone"], options["head"])
 

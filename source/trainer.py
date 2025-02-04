@@ -1,8 +1,11 @@
+from importlib import metadata
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from source.utils import *
 from torch.utils.data import DataLoader, random_split
 import torch.nn as nn
+from wilds.common.grouper import CombinatorialGrouper
+from wilds.common.data_loaders import get_train_loader
 
 
 class Trainer():
@@ -33,15 +36,35 @@ class Trainer():
         train_workers = self.config["train_workers"]
         evaluation_workers = self.config["evaluation_workers"]
         device = self.device
-        train_size = int(split_sizes[0] * len(dataset))
-        val_size = int(split_sizes[1] * len(dataset))
-        test_size = len(dataset) - train_size - val_size
-        train_dataset, val_dataset, test_dataset = random_split(
-            dataset, [train_size, val_size, test_size], generator=self.gen)
 
-        train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                      shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
+        # train_size = int(split_sizes[0] * len(dataset))
+        # val_size = int(split_sizes[1] * len(dataset))
+        # test_size = len(dataset) - train_size - val_size
+        # train_dataset, val_dataset, test_dataset = random_split(
+        #     dataset, [train_size, val_size, test_size], generator=self.gen)
 
+        # train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
+        #                               shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
+
+        grouper = CombinatorialGrouper(dataset, ['experiment'])
+        train_data = dataset.get_subset(
+            "train",
+            transform=transforms.Compose(
+                [transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)]
+            ),
+        )
+        val_data = dataset.get_subset(
+            "val",
+            transform=transforms.Compose(
+                [transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)]
+            ),
+        )
+        train_dataloader = get_train_loader("group", train_data, grouper=grouper, n_groups_per_batch=1,
+                                            batch_size=256, pin_memory_device='cuda:0', pin_memory=True, num_workers=train_workers,
+                                            prefetch_factor=2, persistent_workers=True)
+        val_loader = get_train_loader("group", val_data, grouper=grouper, n_groups_per_batch=1,
+                                      batch_size=256, pin_memory_device='cuda:0', pin_memory=True, num_workers=8,
+                                      prefetch_factor=2, persistent_workers=True)
         if 'load_checkpoint' in self.config.keys():
             print('Loading latest checkpoint... ')
             last_epoch, training_loss_values, validation_loss_values = self.load_checkpoint()
@@ -57,8 +80,10 @@ class Trainer():
 
         for epoch in range(last_epoch, int(self.config['epochs'])):
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
-            for i, (x_batch, cell_type_batch, siRNA_batch) in enumerate(train_dataloader):
-                loss = losser(device, (x_batch, cell_type_batch, siRNA_batch), self.net, self.loss_func)
+            # for i, (x_batch, cell_type_batch, siRNA_batch) in enumerate(train_dataloader):
+            for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):
+                # loss = losser(device, (x_batch, cell_type_batch, siRNA_batch), self.net, self.loss_func)
+                loss = losser(device, (x_batch, metadata, siRNA_batch), self.net, self.loss_func)
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
@@ -73,7 +98,7 @@ class Trainer():
 
             if (epoch + 1) % int(self.config['evaluation_freq']) == 0:
                 print(f"Running Validation-{str(epoch+1)}...")
-                validation_loss_values += validation_loss(self.net, DataLoader(val_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-                                                                               shuffle=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=1), self.device, self.loss_func, losser, epoch)
+                validation_loss_values += validation_loss(self.net, val_loader,
+                                                          self.device, self.loss_func, losser, epoch)
 
         return training_loss_values, validation_loss_values
