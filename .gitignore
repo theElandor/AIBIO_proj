@@ -1,5 +1,4 @@
-.vscode/
-.idea/
-source/__pycache__/
+.vscode
+.idea
+source/__pycache__
 debug.ipynb
-.vscode/launch.json

@@ -8,7 +8,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": [
-                "/homes/nmorelli/AIBIO_proj/config/train/head_conf.yaml"
+                "C:\\Users\\eros\\Documenti\\aibio_proj\\config\\train\\head_conf_debug.yaml"
             ]
         }
     ]

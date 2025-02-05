@@ -37,15 +37,6 @@ class Trainer():
         evaluation_workers = self.config["evaluation_workers"]
         device = self.device
 
-        # train_size = int(split_sizes[0] * len(dataset))
-        # val_size = int(split_sizes[1] * len(dataset))
-        # test_size = len(dataset) - train_size - val_size
-        # train_dataset, val_dataset, test_dataset = random_split(
-        #     dataset, [train_size, val_size, test_size], generator=self.gen)
-
-        # train_dataloader = DataLoader(train_dataset, batch_size=self.config['batch_size'], pin_memory_device=self.device, pin_memory=True,
-        #                               shuffle=True, num_workers=train_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
-
         grouper = CombinatorialGrouper(dataset, ['experiment'])
         train_data = dataset.get_subset(
             "train",
@@ -60,10 +51,10 @@ class Trainer():
             ),
         )
         train_dataloader = get_train_loader("group", train_data, grouper=grouper, n_groups_per_batch=1,
-                                            batch_size=256, pin_memory_device='cuda:0', pin_memory=True, num_workers=train_workers,
+                                            batch_size=self.config["batch_size"], pin_memory_device='cuda:0', pin_memory=True, num_workers=train_workers,
                                             prefetch_factor=2, persistent_workers=True)
         val_loader = get_train_loader("group", val_data, grouper=grouper, n_groups_per_batch=1,
-                                      batch_size=256, pin_memory_device='cuda:0', pin_memory=True, num_workers=8,
+                                      batch_size=self.config["batch_size"], pin_memory_device='cuda:0', pin_memory=True, num_workers=evaluation_workers,
                                       prefetch_factor=2, persistent_workers=True)
         if 'load_checkpoint' in self.config.keys():
             print('Loading latest checkpoint... ')
@@ -79,10 +70,8 @@ class Trainer():
             self.net = nn.DataParallel(self.net)
 
         for epoch in range(last_epoch, int(self.config['epochs'])):
-            pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
-            # for i, (x_batch, cell_type_batch, siRNA_batch) in enumerate(train_dataloader):
+            pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")            
             for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):
-                # loss = losser(device, (x_batch, cell_type_batch, siRNA_batch), self.net, self.loss_func)
                 loss = losser(device, (x_batch, metadata, siRNA_batch), self.net, self.loss_func)
                 self.opt.zero_grad()
                 loss.backward()
