@@ -68,7 +68,7 @@ class Trainer():
         self.net.train()
         if self.config['multiple_gpus']:
             self.net = nn.DataParallel(self.net)
-
+        print("Starting training...", flush=True)
         for epoch in range(last_epoch, int(self.config['epochs'])):
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")            
             for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):

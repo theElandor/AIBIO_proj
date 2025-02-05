@@ -9,7 +9,6 @@ from source.trainer import Trainer
 torch.manual_seed(42)
 
 if __name__ == "__main__":
-
     config = load_yaml()
     device = load_device(config)
     dataset = get_dataset(dataset="rxrx1", download=False, root_dir=config['dataset_dir'])
