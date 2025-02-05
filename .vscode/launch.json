@@ -8,7 +8,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": [
-                "C:\\Users\\eros\\Documenti\\aibio_proj\\config\\train\\head_conf_debug.yaml"
+                "C:\\Users\\eros\\Documenti\\aibio_proj\\config\\train\\e2e_conf_debug.yaml"
             ]
         }
     ]

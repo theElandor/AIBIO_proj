@@ -122,7 +122,10 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
         ), "Provide parameter 'backbone' and 'head' for end-to-end train!"
         from source.net import CellClassifier
         return CellClassifier(options["backbone"], options["head"])
-
+    if netname == "resnet":
+        assert 'num_classes' in options.keys(), "To build a end-to-end resnet, specify 'num_classes'."
+        from source.net import ResNet
+        return ResNet(options['num_classes'])
     else:
         raise ValueError("Invalid netname")
 
@@ -165,9 +168,13 @@ def config_loader(config):
         backbone = load_net(config['backbone'])
         options["backbone"] = backbone
     if 'head' in config:
-        head = load_net(config['head'], options={'num_classes': 1139})
+        assert 'num_classes' in config.keys(), "Please provide the number of classes for the head."
+        head = load_net(config['head'], options={'num_classes': config['num_classes']})
         options["head"] = head
-
+        
+    if 'num_classes' in config:    
+        options['num_classes'] = config['num_classes']
+        
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
     opt = load_opt(config["opt"], net)

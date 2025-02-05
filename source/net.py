@@ -24,7 +24,6 @@ class SimCLR(nn.Module):
         projections = self.projection_head(features)
         return projections
 
-
 class FcHead(nn.Module):
     def __init__(self, num_classes: int):
         super(FcHead, self).__init__()
@@ -36,6 +35,26 @@ class FcHead(nn.Module):
 
     def forward(self, x):
         return self.fc(x)
+    
+class ResNet(nn.Module):
+    """!Simple resnet to try end-to-end classification of siRNA or cell type."""
+    
+    def __init__(self, num_classes):
+        self.num_classes = num_classes        
+        super(ResNet, self).__init__()
+        self.resnet = models.resnet101(weights='DEFAULT')
+        self.resnet.fc = nn.Identity()  # fully-connected removed
+        self.fc = nn.Sequential(
+            nn.Linear(2048, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Linear(512, self.num_classes)
+        )
+    def forward(self, x):
+        x = self.resnet(x)
+        logits = self.fc(x)
+        return logits        
 
 
 class CellClassifier(nn.Module):

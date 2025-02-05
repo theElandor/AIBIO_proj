@@ -1,9 +1,6 @@
 # MODEL
-backbone: simclr
-backbone_weights: D:\checkpoints\checkpoint4
-
-head: fc_head
-net: cell_classifier
+net: resnet
+num_classes: 1139
 
 # DIRECTORIES
 checkpoint_dir: D:\temp
