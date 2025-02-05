@@ -1,4 +1,3 @@
-.vscode
-.idea
-source/__pycache__
-debug.ipynb
+.vscode/*
+.idea/*
+source/__pycache__/*
