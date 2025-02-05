@@ -7,8 +7,6 @@ from prettytable import PrettyTable
 from wilds import get_dataset
 import torch
 import torch.nn.functional as F
-import os
-from sklearn.cluster import KMeans
 from tqdm import tqdm
 import numpy as np
 from scipy.stats import mode
@@ -122,7 +120,10 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
         ), "Provide parameter 'backbone' and 'head' for end-to-end train!"
         from source.net import CellClassifier
         return CellClassifier(options["backbone"], options["head"])
-
+    if netname == "resnet":
+        assert 'num_classes' in options.keys(), "To build a end-to-end resnet, specify 'num_classes'."
+        from source.net import ResNet
+        return ResNet(options['num_classes'])
     else:
         raise ValueError("Invalid netname")
 
@@ -165,9 +166,13 @@ def config_loader(config):
         backbone = load_net(config['backbone'])
         options["backbone"] = backbone
     if 'head' in config:
-        head = load_net(config['head'], options={'num_classes': 1139})
+        assert 'num_classes' in config.keys(), "Please provide the number of classes for the head."
+        head = load_net(config['head'], options={'num_classes': config['num_classes']})
         options["head"] = head
-
+        
+    if 'num_classes' in config:    
+        options['num_classes'] = config['num_classes']
+        
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
     opt = load_opt(config["opt"], net)
@@ -213,38 +218,6 @@ def perturbations_processing(device: torch.device, data: tuple, net: torch.nn.Mo
     out_feat = net(x_batch.to(torch.float).to(device))
     loss = loss_func(out_feat, siRNA_batch.to(device))
     return loss
-
-
-def test_kmean_accuracy(net, test_loader, device):
-    net.eval()
-    test_features = []
-    test_labels = []
-    with torch.no_grad():
-        for x_batch, y_batch, _ in tqdm(
-            test_loader
-        ):  # Suppongo tu abbia le etichette nel test set
-            features = net(
-                x_batch.to(torch.float).to(device)
-            )  # Estrazione delle feature
-            test_features.append(features)
-            test_labels.append(y_batch.to(device))
-
-    test_features = torch.cat(test_features).cpu()
-    test_labels = torch.cat(test_labels).cpu()
-    kmeans = KMeans(n_clusters=4, random_state=42)
-    predicted_clusters = kmeans.fit_predict(test_features)
-    cluster_to_class = {}
-
-    for cluster_id in range(4):
-        indices = np.where(predicted_clusters == cluster_id)[0]
-        true_labels = test_labels[indices]
-        most_common_class = mode(true_labels).mode
-        cluster_to_class[cluster_id] = most_common_class
-
-    mapped_predictions = np.array([cluster_to_class[c] for c in predicted_clusters])
-    accuracy = np.mean(mapped_predictions == test_labels.numpy())
-    print(f"Test Accuracy: {accuracy * 100:.2f}%")
-
 
 def validation_loss(net, val_loader, device, loss_func, losser, epoch):
     validation_loss_values = []
