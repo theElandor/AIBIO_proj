@@ -199,16 +199,17 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
 
 # Losser for supervised learning. Classification of cell types
 
-
 def cell_type_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
-    x_batch, cell_type_batch, siRNA_batch = data
+    x_batch, metadata, _ = data
     out_feat = net(x_batch.to(torch.float).to(device))
-    loss = loss_func(out_feat, cell_type_batch.to(device))
+    # metadata[0] contains the cell type
+    loss = loss_func(out_feat, metadata[:, 0].to(device))
     return loss
 
 
+
 def perturbations_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
-    x_batch, cell_type_batch, siRNA_batch = data
+    x_batch, _, siRNA_batch = data
     out_feat = net(x_batch.to(torch.float).to(device))
     loss = loss_func(out_feat, siRNA_batch.to(device))
     return loss
