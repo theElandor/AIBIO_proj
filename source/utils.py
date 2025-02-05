@@ -223,8 +223,8 @@ def validation_loss(net, val_loader, device, loss_func, losser, epoch):
     validation_loss_values = []
     pbar = tqdm(total=len(val_loader), desc=f"validation-{epoch+1}")
     with net.eval() and torch.no_grad():
-        for x_batch, cell_type_batch, siRNA_batch, in val_loader:
-            loss = losser(device, (x_batch, cell_type_batch, siRNA_batch), net, loss_func)
+        for x_batch, siRNA_batch, metadata, in val_loader:
+            loss = losser(device, (x_batch, metadata, siRNA_batch), net, loss_func)
             validation_loss_values.append(loss.item())
             pbar.update(1)
             pbar.set_postfix({"Validation Loss": loss.item()})
