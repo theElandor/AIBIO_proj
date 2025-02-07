@@ -3,7 +3,7 @@
 #SBATCH -o /homes/nmorelli/output/out.txt
 #SBATCH --job-name=simclr_train
 #SBATCH --account=ai4bio2024
-#SBATCH --partition=al_usr_prod
+#SBATCH --partition=all_usr_prod
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:2
