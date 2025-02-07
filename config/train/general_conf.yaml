@@ -17,7 +17,7 @@ epochs: 20
 batch_size: 256
 loss: NCE # choose among [NCE, cross_entropy]
 opt: adam # choose among [adam,]
-lr: 0.005
+lr: 0.0005
 evaluation_freq: 4
 model_save_freq: 4
 grouper: ~ # choose among [experiment, cell_type, ...]
@@ -25,8 +25,8 @@ grouper: ~ # choose among [experiment, cell_type, ...]
 # HARDWARE
 device: gpu
 multiple_gpus: True
-train_workers: 7
-evaluation_workers: 7
+train_workers: 10
+evaluation_workers: 10
 
 # WNADB CONFIG
 project_name: "AIBIO_proj"

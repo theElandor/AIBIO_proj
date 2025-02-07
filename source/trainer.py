@@ -5,8 +5,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from source.utils import *
 from torch.utils.data import DataLoader, random_split
 import torch.nn as nn
-from wilds.common.grouper import CombinatorialGrouper
-from wilds.common.data_loaders import get_train_loader
 
 
 class Trainer():
@@ -51,39 +49,17 @@ class Trainer():
         evaluation_workers = self.config["evaluation_workers"]
         device = self.device
 
-        if self.config['grouper'] is not None:
-            grouper = CombinatorialGrouper(dataset, [self.config['grouper']])
-            train_data = dataset.get_subset(
-                "train",
-                transform=transforms.Compose(
-                    [transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)]
-                ),
-            )
-            val_data = dataset.get_subset(
-                "val",
-                transform=transforms.Compose(
-                    [transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)]
-                ),
-            )
-            train_dataloader = get_train_loader("standard" if grouper is None else "group", train_data, grouper=grouper, n_groups_per_batch=1,
-                                                batch_size=self.config["batch_size"], pin_memory_device=self.device, pin_memory=True, num_workers=train_workers,
-                                                prefetch_factor=2, persistent_workers=True)
-            val_dataloader = get_train_loader("standard" if grouper is None else "group", val_data, grouper=grouper, n_groups_per_batch=1,
-                                              batch_size=self.config["batch_size"], pin_memory_device=self.device, pin_memory=True, num_workers=evaluation_workers,
-                                              prefetch_factor=2, persistent_workers=True)
+        train_size = int(split_sizes[0] * len(dataset))
+        val_size = int(split_sizes[1] * len(dataset))
+        test_size = len(dataset) - train_size - val_size
 
-        else:
-            train_size = int(split_sizes[0] * len(dataset))
-            val_size = int(split_sizes[1] * len(dataset))
-            test_size = len(dataset) - train_size - val_size
+        train_data, val_data, test_data = random_split(
+            dataset, [train_size, val_size, test_size], generator=self.gen)
 
-            train_data, val_data, test_data = random_split(
-                dataset, [train_size, val_size, test_size], generator=self.gen)
-
-            train_dataloader = DataLoader(train_data, batch_size=self.config["batch_size"], pin_memory_device=self.device,
-                                          pin_memory=True, num_workers=train_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
-            val_dataloader = DataLoader(val_data, batch_size=self.config["batch_size"], pin_memory_device=self.device,
-                                        pin_memory=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
+        train_dataloader = DataLoader(train_data, batch_size=self.config["batch_size"], pin_memory_device=self.device, shuffle=True,
+                                      pin_memory=True, num_workers=train_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
+        val_dataloader = DataLoader(val_data, batch_size=self.config["batch_size"], pin_memory_device=self.device, shuffle=True,
+                                    pin_memory=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
 
         if self.config['load_checkpoint'] is not None:
             print('Loading latest checkpoint... ')
