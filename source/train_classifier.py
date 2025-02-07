@@ -1,4 +1,6 @@
 import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 from source.utils import *
 from source.dataset import Rxrx1

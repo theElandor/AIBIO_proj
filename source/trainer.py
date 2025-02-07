@@ -35,7 +35,7 @@ class Trainer():
 
     def init_wandb(self):
         assert wandb.api.api_key, "the api key is not setted!\n"
-        print(f"wandb key: {wandb.api.api_key}")
+        # print(f"wandb key: {wandb.api.api_key}")
         wandb.login(verify=True)
         wandb.init(
             project=self.config['project_name'],
