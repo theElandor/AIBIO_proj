@@ -1,15 +1,13 @@
 import os, sys
-import torchvision.transforms.v2 as transforms
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import torchvision.transforms.v2 as transforms
 from prettytable import PrettyTable
 from wilds import get_dataset
-import torch
+import torch, wandb
 import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
-from scipy.stats import mode
 from typing import Callable
 import yaml
 from pathlib import Path
@@ -51,15 +49,6 @@ def load_device(config):
 
 def download_dataset():
     dataset = get_dataset(dataset="rxrx1", download=True, root_dir="")
-
-
-def contrastive_loss(features, device, temperature=0.5):
-    features = F.normalize(features, dim=1)
-    similarity_matrix = torch.mm(features, features.T) / temperature
-    batch_size = features.shape[0]
-    labels = torch.arange(batch_size).to(device)
-    loss = F.cross_entropy(similarity_matrix, labels)
-    return loss
 
 
 def info_nce_loss(features, device, temperature=0.5):
@@ -129,9 +118,7 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
 
 
 def load_loss(lossname: str) -> Callable:
-    if lossname == "contrastive":
-        return contrastive_loss
-    elif lossname == "NCE":
+    if lossname == "NCE":
         return info_nce_loss
     if lossname == "cross_entropy":
         return F.cross_entropy
@@ -139,9 +126,9 @@ def load_loss(lossname: str) -> Callable:
         raise ValueError("Invalid lossname")
 
 
-def load_opt(optimizer: str, net: torch.nn.Module) -> torch.optim.Optimizer:
-    if optimizer == "adam":
-        return torch.optim.Adam(net.parameters(), lr=0.0005)
+def load_opt(config: dict, net: torch.nn.Module) -> torch.optim.Optimizer:
+    if config['opt'] == "adam":
+        return torch.optim.Adam(net.parameters(), lr=config['lr'])
     else:
         raise ValueError("Invalid optimizer")
 
@@ -154,7 +141,7 @@ def load_yaml():
 
     assert Path(config['checkpoint_dir']).is_dir(), "Please provide a valid directory to save checkpoints in."
     assert Path(config['dataset_dir']).is_dir(), "Please provide a valid directory to load dataset."
-    if 'load_checkpoint' in config.keys():
+    if config['load_checkpoint'] is not None:
         assert Path(config['load_checkpoint']).is_file(), "Please provide a valid file to load checkpoint."
 
     return config
@@ -162,20 +149,20 @@ def load_yaml():
 
 def config_loader(config):
     options = {}
-    if 'backbone' in config:
+    if config['backbone'] is not None:
         backbone = load_net(config['backbone'])
         options["backbone"] = backbone
-    if 'head' in config:
-        assert 'num_classes' in config.keys(), "Please provide the number of classes for the head."
+    if config['head'] is not None:
+        assert config['num_classes'] is not None, "Please provide the number of classes for the head."
         head = load_net(config['head'], options={'num_classes': config['num_classes']})
         options["head"] = head
-        
-    if 'num_classes' in config:    
+
+    if config['num_classes'] is not None:
         options['num_classes'] = config['num_classes']
-        
+
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
-    opt = load_opt(config["opt"], net)
+    opt = load_opt(config, net)
     return (net, loss, opt)
 
 # Losser (loss calculator) for self supervised learning with simCLR
@@ -204,6 +191,7 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
 
 # Losser for supervised learning. Classification of cell types
 
+
 def cell_type_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
     x_batch, metadata, _ = data
     out_feat = net(x_batch.to(torch.float).to(device))
@@ -212,12 +200,12 @@ def cell_type_processing(device: torch.device, data: tuple, net: torch.nn.Module
     return loss
 
 
-
 def perturbations_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
     x_batch, _, siRNA_batch = data
     out_feat = net(x_batch.to(torch.float).to(device))
     loss = loss_func(out_feat, siRNA_batch.to(device))
     return loss
+
 
 def validation_loss(net, val_loader, device, loss_func, losser, epoch):
     validation_loss_values = []
@@ -226,6 +214,7 @@ def validation_loss(net, val_loader, device, loss_func, losser, epoch):
         for x_batch, siRNA_batch, metadata, in val_loader:
             loss = losser(device, (x_batch, metadata, siRNA_batch), net, loss_func)
             validation_loss_values.append(loss.item())
+            wandb.log({"val_loss": loss.item()})
             pbar.update(1)
             pbar.set_postfix({"Validation Loss": loss.item()})
 

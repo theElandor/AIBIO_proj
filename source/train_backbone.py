@@ -1,5 +1,4 @@
 import os, sys
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
@@ -14,8 +13,11 @@ if __name__ == "__main__":
 
     config = load_yaml()
     device = load_device(config)
-    # dataset = Rxrx1(config['dataset_dir'])
-    dataset = get_dataset(dataset="rxrx1", download=False, root_dir=config['dataset_dir'])
+
+    if config['grouper'] is not None:
+        dataset = get_dataset(dataset="rxrx1", download=False, root_dir=config['dataset_dir'])
+    else:
+        dataset = Rxrx1(config['dataset_dir'])
 
     net, loss_func, opt = config_loader(config)
 

@@ -1,0 +1,33 @@
+# MODEL
+backbone: ~
+backbone_weights: ~
+
+head: ~
+num_classes: ~
+
+net: simclr # choose among [simclr, fc_head, cell_classifier, resnet]
+
+# DIRECTORIES
+checkpoint_dir: /work/h2020deciderficarra_shared/rxrx1/checkpoints/simclr_backbone
+dataset_dir: /work/ai4bio2024/rxrx1
+load_checkpoint: ~
+
+# TRAINING OPTIONS
+epochs: 20
+batch_size: 256
+loss: NCE # choose among [NCE, cross_entropy]
+opt: adam # choose among [adam,]
+lr: 0.005
+evaluation_freq: 4
+model_save_freq: 4
+grouper: ~ # choose among [experiment, cell_type, ...]
+
+# HARDWARE
+device: gpu
+multiple_gpus: True
+train_workers: 7
+evaluation_workers: 7
+
+# WNADB CONFIG
+project_name: "AIBIO_proj"
+run_name: "simclr_train"

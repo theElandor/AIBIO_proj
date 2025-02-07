@@ -1,6 +1,4 @@
-import os, sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import os, sys, torch
 from torchvision.io import read_image
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import Dataset
@@ -18,11 +16,11 @@ class Rxrx1(Dataset):
         self.le_.fit(self.metadata['cell_type'].unique())
         self.metadata['cell_type'] = self.le_.transform(self.metadata['cell_type'])
         self.items = [(os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' +
-                       str(item.site) + '.png'), item.cell_type, item.sirna_id) for item in self.metadata.itertuples(index=False)]
+                       str(item.site) + '.png'), item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)]
 
     def __getitem__(self, index):
-        img_path, cell_type, sirna_id = self.items[index]
-        return (read_image(img_path), cell_type, sirna_id)
+        img_path, sirna_id, metadata = self.items[index]
+        return (read_image(img_path), sirna_id, metadata)
 
     def __len__(self):
         return len(self.items)
