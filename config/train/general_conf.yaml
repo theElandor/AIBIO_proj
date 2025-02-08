@@ -25,8 +25,8 @@ grouper: ~ # choose among [experiment, cell_type, ...]
 # HARDWARE
 device: gpu
 multiple_gpus: True
-train_workers: 10
-evaluation_workers: 10
+train_workers: 4
+evaluation_workers: 4
 
 # WNADB CONFIG
 project_name: "AIBIO_proj"

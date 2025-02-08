@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
 from typing import Callable
-import yaml
+import yaml, random
 from pathlib import Path
 
 
@@ -37,10 +37,8 @@ def load_device(config):
         assert torch.cuda.is_available(), "Notebook is not configured properly!"
         device = "cuda:0"
         print(
-            "Training network on {}".format(torch.cuda.get_device_name(device=device))
+            "Training network on {}({})".format(torch.cuda.get_device_name(device=device), torch.cuda.device_count())
         )
-        for i in range(torch.cuda.device_count()):
-            print(torch.cuda.get_device_properties(i).name)
 
     else:
         device = torch.device("cpu")
@@ -51,7 +49,7 @@ def download_dataset():
     dataset = get_dataset(dataset="rxrx1", download=True, root_dir="")
 
 
-def info_nce_loss(features, device, temperature=0.5):
+def info_nce_loss(features, device, temperature=0.15):
     """
     Implements Noise Contrastive Estimation loss as explained in the simCLR paper.
     Actual code is taken from here https://github.com/sthalles/SimCLR/blob/master/simclr.py
@@ -172,18 +170,19 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
     x_batch, _, _ = data
     # no transformations
     std_transform = transforms.Compose(
-        [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
+        [transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)])
     # view for self supervised learning
-    transform = transforms.Compose([
+    transform = [
         transforms.RandomResizedCrop(256),
         transforms.ColorJitter(brightness=0.5, contrast=0.5),
         transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
-        transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
-    ])
-    standard_views = torch.cat(
-        [std_transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
-    augmented_views = torch.cat(
-        [transform(img.unsqueeze(0)) for img in x_batch], dim=0).to(device)
+    ]
+    sampled_transform = (random.choices(transform, k=random.choice([1, 2, 3])))
+    sampled_transform.append(std_transform)
+    sampled_transform = transforms.Compose(sampled_transform)
+
+    standard_views = std_transform(x_batch).to(device)
+    augmented_views = sampled_transform(x_batch).to(device)
     block = torch.cat([standard_views, augmented_views], dim=0)
     out_feat = net.forward(block.to(torch.float))
     loss = loss_func(out_feat, device)

@@ -15,7 +15,7 @@ class Trainer():
         self.opt = opt
         self.loss_func = loss_func
         self.scheduler = scheduler
-        self.gen = torch.Generator().manual_seed(42)
+        self.gen = torch.Generator().manual_seed(56)
 
     def load_checkpoint(self):
         checkpoint = load_weights(self.config['load_checkpoint'], self.net, self.device)
@@ -57,9 +57,9 @@ class Trainer():
             dataset, [train_size, val_size, test_size], generator=self.gen)
 
         train_dataloader = DataLoader(train_data, batch_size=self.config["batch_size"], pin_memory_device=self.device, shuffle=True,
-                                      pin_memory=True, num_workers=train_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
+                                      pin_memory=True, num_workers=train_workers, drop_last=True, prefetch_factor=4, persistent_workers=True)
         val_dataloader = DataLoader(val_data, batch_size=self.config["batch_size"], pin_memory_device=self.device, shuffle=True,
-                                    pin_memory=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
+                                    pin_memory=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=4)
 
         if self.config['load_checkpoint'] is not None:
             print('Loading latest checkpoint... ')
@@ -70,15 +70,14 @@ class Trainer():
             training_loss_values = []  # store every training loss value
             validation_loss_values = []  # store every validation loss value
 
-        self.net.train()
+        self.net.train()q
         if self.config['multiple_gpus']:
             self.net = nn.DataParallel(self.net)
         print("Starting training...", flush=True)
         for epoch in range(last_epoch, int(self.config['epochs'])):
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
-            wandb.log({"epoch": epoch})
             for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):
-                loss = losser(device, (x_batch, metadata, siRNA_batch), self.net, self.loss_func)
+                loss = losser(device, (x_batch, siRNA_batch, metadata), self.net, self.loss_func)
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
