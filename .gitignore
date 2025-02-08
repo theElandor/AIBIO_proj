@@ -10,4 +10,6 @@ source/__pycache__/*
 .trash
 test.ipynb
 debug.ipynb
+
+#wandb
 wandb
