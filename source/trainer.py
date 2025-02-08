@@ -40,6 +40,49 @@ class Trainer():
         )
 
     def train(self, split_sizes, dataset, losser):
+        """
+    Trains a neural network model using the specified dataset and configurations.
+
+    Args:
+        split_sizes (list): Proportions for splitting the dataset into train, validation, and test subsets.
+        dataset (Dataset): The dataset object containing the data and its subsets (train/val/test).
+        losser (callable): A custom function to compute the loss. It takes the device, batch data, model, 
+            and loss function as input and returns the computed loss.
+
+    Attributes:
+        train_workers (int): Number of workers to use for the training data loader.
+        evaluation_workers (int): Number of workers to use for the validation data loader.
+        device (torch.device): The device (e.g., 'cuda' or 'cpu') on which training will run.
+
+    Data Loaders:
+        train_dataloader: DataLoader for the training subset, with batching and grouping logic.
+        val_loader: DataLoader for the validation subset, with batching and grouping logic.
+
+    Model Training:
+        - Handles checkpoint loading if specified in the configuration (`load_checkpoint`).
+        - Iterates through specified epochs (`self.config['epochs']`) and trains the model in batches.
+        - Logs training loss values for every batch and stores them in `training_loss_values`.
+        - Saves the model at intervals specified by `self.config['model_save_freq']`.
+        - Runs validation at intervals specified by `self.config['evaluation_freq']`, appending validation 
+          loss values to `validation_loss_values`.
+
+    Returns:
+        tuple:
+            - training_loss_values (list): List of training loss values recorded for each batch.
+            - validation_loss_values (list): List of validation loss values recorded during validation.
+
+    Raises:
+        ValueError: If required configurations (e.g., `epochs`, `batch_size`) are missing from `self.config`.
+
+    Notes:
+        - Uses `CombinatorialGrouper` to group data for training and validation.
+        - Supports multi-GPU training if `self.config['multiple_gpus']` is enabled.
+        - Data loaders use advanced prefetching and worker options for efficient data loading.
+
+    Example:
+        >>> trainer = Trainer(config, model, optimizer, loss_func)
+        >>> training_loss, validation_loss = trainer.train(split_sizes, dataset, custom_losser)
+    """
 
         self.init_wandb()
 
