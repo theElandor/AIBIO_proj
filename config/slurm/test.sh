@@ -1,16 +1,14 @@
-#!/bin/sh
-#SBATCH -e /homes/nmorelli/output/err.txt
-#SBATCH -o /homes/nmorelli/output/out.txt
-#SBATCH --job-name=simclr_train
+#!/bin/bash
+#SBATCH --job-name=test_job
+#SBATCH -e /homes/nmorelli/err.log
+#SBATCH -o /homes/nmorelli/out.log
 #SBATCH --account=ai4bio2024
 #SBATCH --partition=all_usr_prod
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=12
-#SBATCH --gres=gpu:1
-#SBATCH --mem=30G
+#SBATCH --cpus-per-task=1
+#SBATCH --gres=gpu:0
+#SBATCH --mem=10G
 #SBATCH --time=24:00:00
-#SBATCH --constraint="gpu_RTXA5000_24G"
-
 
 # Replace with your actual Discord webhook URL
 DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/1337444251608285305/_wIi-3jEM_RGpdThArOC7einausDxB-BD41Qd4DuZkLSJlw4odF84RZLmmKmUKHfPPj8"
@@ -19,9 +17,7 @@ DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/1337444251608285305/_wIi-3
 # Definizione del comando da eseguire
 ##############################
 # Utilizziamo apici doppi all'esterno e scappiamo le virgolette interne
-JOB_CMD="python3 /homes/nmorelli/AIBIO_proj/source/train_backbone.py /homes/nmorelli/AIBIO_proj/config/train/general_conf.yaml"
-
-
+JOB_CMD="python -c \"import subprocess; subprocess.run(['nvidia-smi'])\""
 export JOB_CMD
 
 ##############################

@@ -20,10 +20,8 @@ class Trainer():
     def load_checkpoint(self):
         checkpoint = load_weights(self.config['load_checkpoint'], self.net, self.device)
         self.opt.load_state_dict(checkpoint['optimizer_state_dict'])
-        try:
+        if checkpoint['scheduler_state_dict'] is not None:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        except:
-            print("Scheduler not found in the checkpoint.")
 
         last_epoch = checkpoint['epoch']
         training_loss_values = checkpoint['training_loss_values']
@@ -56,10 +54,10 @@ class Trainer():
         train_data, val_data, test_data = random_split(
             dataset, [train_size, val_size, test_size], generator=self.gen)
 
-        train_dataloader = DataLoader(train_data, batch_size=self.config["batch_size"], pin_memory_device=self.device, shuffle=True,
-                                      pin_memory=True, num_workers=train_workers, drop_last=True, prefetch_factor=4, persistent_workers=True)
-        val_dataloader = DataLoader(val_data, batch_size=self.config["batch_size"], pin_memory_device=self.device, shuffle=True,
-                                    pin_memory=True, num_workers=evaluation_workers, drop_last=True, prefetch_factor=4)
+        train_dataloader = DataLoader(train_data, batch_size=self.config["batch_size"], shuffle=True,
+                                      num_workers=train_workers, drop_last=True, prefetch_factor=2, persistent_workers=True)
+        val_dataloader = DataLoader(val_data, batch_size=self.config["batch_size"], shuffle=True,
+                                    num_workers=evaluation_workers, drop_last=True, prefetch_factor=2)
 
         if self.config['load_checkpoint'] is not None:
             print('Loading latest checkpoint... ')
@@ -76,6 +74,7 @@ class Trainer():
         print("Starting training...", flush=True)
         for epoch in range(last_epoch, int(self.config['epochs'])):
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
+            self.net.train()
             for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):
                 loss = losser(device, (x_batch, siRNA_batch, metadata), self.net, self.loss_func)
                 self.opt.zero_grad()
@@ -89,11 +88,15 @@ class Trainer():
 
             if (epoch + 1) % int(self.config['model_save_freq']) == 0:
                 save_model(epoch, self.net, self.opt, training_loss_values, validation_loss_values,
-                           self.config['batch_size'], self.config['checkpoint_dir'], self.config['opt'])
+                           self.config['batch_size'], self.config['checkpoint_dir'], self.config['opt'], self.scheduler)
 
             if (epoch + 1) % int(self.config['evaluation_freq']) == 0:
                 print(f"Running Validation-{str(epoch+1)}...")
                 validation_loss_values += validation_loss(self.net, val_dataloader,
                                                           self.device, self.loss_func, losser, epoch)
+
+            if (self.scheduler is not None):
+                self.scheduler.step()
+                wandb.log({"lr": self.scheduler.print_lr()})
 
         return training_loss_values, validation_loss_values

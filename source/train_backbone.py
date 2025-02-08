@@ -15,8 +15,8 @@ if __name__ == "__main__":
 
     dataset = Rxrx1(config['dataset_dir'])
 
-    net, loss_func, opt = config_loader(config)
+    net, loss_func, opt, sched = config_loader(config)
 
-    tr_ = Trainer(net, device, config, opt, loss_func)
+    tr_ = Trainer(net, device, config, opt, loss_func, scheduler=sched)
 
     training_loss_values, validation_loss_values = tr_.train([0.7, 0.15, 0.15], dataset, sim_clr_processing)

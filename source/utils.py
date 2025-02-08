@@ -126,7 +126,9 @@ def load_loss(lossname: str) -> Callable:
 
 def load_opt(config: dict, net: torch.nn.Module) -> torch.optim.Optimizer:
     if config['opt'] == "adam":
-        return torch.optim.Adam(net.parameters(), lr=config['lr'])
+        opt = torch.optim.Adam(net.parameters(), lr=config['lr'], weight_decay=0.00001, momentum=0.9)
+        sched = torch.optim.lr_scheduler.PolynomialLR(opt, total_iters=config['epochs'], power=2.0)
+        return opt, sched
     else:
         raise ValueError("Invalid optimizer")
 
@@ -160,8 +162,8 @@ def config_loader(config):
 
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
-    opt = load_opt(config, net)
-    return (net, loss, opt)
+    opt, sched = load_opt(config, net)
+    return (net, loss, opt, sched)
 
 # Losser (loss calculator) for self supervised learning with simCLR
 
@@ -220,7 +222,7 @@ def validation_loss(net, val_loader, device, loss_func, losser, epoch):
     return validation_loss_values
 
 
-def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir, optimizer):
+def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir, optimizer, scheduler=None):
     name = os.path.join(checkpoint_dir, "checkpoint{}".format(epoch + 1))
     torch.save(
         {
@@ -231,6 +233,7 @@ def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir
             "validation_loss_values": val_loss,
             "batch_size": batch_size,
             "optimizer": optimizer,
+            "scheduler_state_dict": scheduler.state_dict() if (scheduler is not None) else None
         },
         name
     )
