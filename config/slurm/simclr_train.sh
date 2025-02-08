@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #SBATCH -e /homes/nmorelli/output/err.txt
 #SBATCH -o /homes/nmorelli/output/out.txt
 #SBATCH --job-name=simclr_train
@@ -9,7 +9,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=30G
 #SBATCH --time=24:00:00
-#SBATCH --constraint="gpu_RTXA5000_24G"
+
+JOB_CMD="python3 /homes/nmorelli/AIBIO_proj/source/train_backbone.py /homes/nmorelli/AIBIO_proj/config/train/general_conf.yaml"
 
 
 # Replace with your actual Discord webhook URL
@@ -19,9 +20,6 @@ DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/1337444251608285305/_wIi-3
 # Definizione del comando da eseguire
 ##############################
 # Utilizziamo apici doppi all'esterno e scappiamo le virgolette interne
-JOB_CMD="python3 /homes/nmorelli/AIBIO_proj/source/train_backbone.py /homes/nmorelli/AIBIO_proj/config/train/general_conf.yaml"
-
-
 export JOB_CMD
 
 ##############################
@@ -62,8 +60,8 @@ def read_log(filepath):
     except Exception as e:
         return f"Error reading {filepath}: {e}"
 
-out_log = read_log("/homes/nmorelli/out.log")
-err_log = read_log("/homes/nmorelli/err.log")
+out_log = read_log("/homes/nmorelli/output/out.txt")
+err_log = read_log("/homes/nmorelli/output/err.txt")
 
 # Imposta il colore dell'embed: verde se COMPLETED, rosso altrimenti
 embed_color = 3066993 if job_state == "COMPLETED" else 15158332

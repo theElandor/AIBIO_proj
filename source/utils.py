@@ -141,14 +141,14 @@ def load_loss(lossname: str) -> Callable:
 
 def load_opt(config: dict, net: torch.nn.Module) -> torch.optim.Optimizer:
     if config['opt'] == "adam":
-        opt = torch.optim.Adam(net.parameters(), lr=config['lr'], weight_decay=0.00001, momentum=0.9)
+        opt = torch.optim.Adam(net.parameters(), lr=config['lr'], weight_decay=0.00001)
         sched = torch.optim.lr_scheduler.PolynomialLR(opt, total_iters=config['epochs'], power=2.0)
         return opt, sched
     else:
         raise ValueError("Invalid optimizer")
 
 
-def load_yaml()->dict:
+def load_yaml() -> dict:
     """Loads a YAML configuration file from the first command-line argument.
 
     This function reads a YAML file specified as a command-line argument, 
@@ -156,7 +156,7 @@ def load_yaml()->dict:
 
     Usage:
         python my_script.py config.yaml
-    
+
     Raises:
         AssertionError: If `checkpoint_dir` is not a valid directory.
         AssertionError: If `dataset_dir` is not a valid directory.
@@ -205,17 +205,14 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
     std_transform = transforms.Compose(
         [transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)])
     # view for self supervised learning
-    transform = [
-        transforms.RandomResizedCrop(256),
-        transforms.ColorJitter(brightness=0.5, contrast=0.5),
-        transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
-    ]
-    sampled_transform = (random.choices(transform, k=random.choice([1, 2, 3])))
-    sampled_transform.append(std_transform)
-    sampled_transform = transforms.Compose(sampled_transform)
+    transform = transforms.Compose([transforms.RandomResizedCrop(256),
+                                   transforms.ColorJitter(brightness=0.5, contrast=0.5),
+                                   transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
+                                   transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)]
+                                   )
 
     standard_views = std_transform(x_batch).to(device)
-    augmented_views = sampled_transform(x_batch).to(device)
+    augmented_views = transform(x_batch).to(device)
     block = torch.cat([standard_views, augmented_views], dim=0)
     out_feat = net.forward(block.to(torch.float))
     loss = loss_func(out_feat, device)
