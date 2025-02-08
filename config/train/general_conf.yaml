@@ -14,7 +14,7 @@ load_checkpoint: ~
 
 # TRAINING OPTIONS
 epochs: 20
-batch_size: 64
+batch_size: 256
 loss: NCE # choose among [NCE, cross_entropy]
 opt: adam # choose among [adam,]
 lr: 0.005

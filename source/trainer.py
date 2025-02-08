@@ -115,6 +115,7 @@ class Trainer():
         if self.config['multiple_gpus']:
             self.net = nn.DataParallel(self.net)
         print("Starting training...", flush=True)
+        wandb.log({"lr": self.scheduler.get_last_lr()})
         for epoch in range(last_epoch, int(self.config['epochs'])):
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
             self.net.train()
@@ -140,6 +141,6 @@ class Trainer():
 
             if (self.scheduler is not None):
                 self.scheduler.step()
-                wandb.log({"lr": self.scheduler.print_lr()})
+                wandb.log({"lr": self.scheduler.get_last_lr()})
 
         return training_loss_values, validation_loss_values

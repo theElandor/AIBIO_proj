@@ -9,6 +9,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=30G
 #SBATCH --time=24:00:00
+#SBATCH --constraint="gpu_RTXA5000_24G|gpu_RTX5000_16G|gpu_RTX6000_24G|gpu_A40_48G"
+
 
 JOB_CMD="python3 /homes/nmorelli/AIBIO_proj/source/train_backbone.py /homes/nmorelli/AIBIO_proj/config/train/general_conf.yaml"
 
