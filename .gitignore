@@ -1,6 +1,13 @@
+#original gitignore
 .vscode/*
 .idea/*
 source/__pycache__/*
+
+#pip stuff
+.venv
+
+#local experiments
+.trash
 test.ipynb
 debug.ipynb
 wandb

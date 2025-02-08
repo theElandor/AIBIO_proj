@@ -32,7 +32,22 @@ def display_configs(configs):
     print(t, flush=True)
 
 
-def load_device(config):
+def load_device(config: dict):
+    """Loads and returns the appropriate computing device based on the configuration.
+
+    This function checks the "device" key in the given config dictionary.
+    If "gpu" is specified, it ensures that CUDA is available and selects the first GPU.
+    Otherwise, it defaults to the CPU.
+
+    Args:
+        config (dict): A dictionary containing a "device" key with values "gpu" or "cpu".
+
+    Raises:
+        AssertionError: If "gpu" is requested but CUDA is not available.
+
+    Returns:
+        str: The device identifier, either "cuda:0" for GPU or "cpu".
+    """
     if config["device"] == "gpu":
         assert torch.cuda.is_available(), "Notebook is not configured properly!"
         device = "cuda:0"
@@ -133,7 +148,23 @@ def load_opt(config: dict, net: torch.nn.Module) -> torch.optim.Optimizer:
         raise ValueError("Invalid optimizer")
 
 
-def load_yaml():
+def load_yaml()->dict:
+    """Loads a YAML configuration file from the first command-line argument.
+
+    This function reads a YAML file specified as a command-line argument, 
+    parses its contents into a dictionary, and validates required paths.
+
+    Usage:
+        python my_script.py config.yaml
+    
+    Raises:
+        AssertionError: If `checkpoint_dir` is not a valid directory.
+        AssertionError: If `dataset_dir` is not a valid directory.
+        AssertionError: If `load_checkpoint` is provided but not a valid file.
+
+    Returns:
+        dict: A dictionary containing the parsed YAML configuration.
+    """
     inFile = sys.argv[1]
     with open(inFile, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
