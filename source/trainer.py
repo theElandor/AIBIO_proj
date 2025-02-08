@@ -70,7 +70,7 @@ class Trainer():
             training_loss_values = []  # store every training loss value
             validation_loss_values = []  # store every validation loss value
 
-        self.net.train()q
+        self.net.train()
         if self.config['multiple_gpus']:
             self.net = nn.DataParallel(self.net)
         print("Starting training...", flush=True)
