@@ -148,7 +148,7 @@ def load_opt(config: dict, net: torch.nn.Module) -> torch.optim.Optimizer:
         raise ValueError("Invalid optimizer")
 
 
-def load_yaml()->dict:
+def load_yaml() -> dict:
     """Loads a YAML configuration file from the first command-line argument.
 
     This function reads a YAML file specified as a command-line argument, 
@@ -156,7 +156,7 @@ def load_yaml()->dict:
 
     Usage:
         python my_script.py config.yaml
-    
+
     Raises:
         AssertionError: If `checkpoint_dir` is not a valid directory.
         AssertionError: If `dataset_dir` is not a valid directory.
@@ -205,10 +205,10 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
     std_transform = transforms.Compose(
         [transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)])
     # view for self supervised learning
-    transform = transforms.Compose(transforms.RandomResizedCrop(256),
+    transform = transforms.Compose([transforms.RandomResizedCrop(256),
                                    transforms.ColorJitter(brightness=0.5, contrast=0.5),
                                    transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
-                                   transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)
+                                   transforms.ToImage(), transforms.ToDtype(torch.float, scale=True)]
                                    )
 
     standard_views = std_transform(x_batch).to(device)
