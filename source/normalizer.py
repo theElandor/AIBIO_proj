@@ -9,8 +9,7 @@ from torch.utils.data import DataLoader
 import sys
 from typing import Dict, Tuple
 from collections import defaultdict
-def default_tensor():
-    return torch.zeros(1,3,256,256)
+
 print('Requirements: 200G of ram and 32 cpu')
 #number of param check
 if len(sys.argv) < 3:
@@ -45,7 +44,7 @@ print(f'I\'ll group by {group_key} and the expanded .csv will be saved at: {save
 print('Any preexisting file with the same path will be deleted')
 
 dataset = Rxrx1(root_dir)
-dataloader = DataLoader(dataset, batch_size=1, num_workers=32, pin_memory=True)
+dataloader = DataLoader(dataset, batch_size=1, num_workers=32)
 
 #declaring a new, expanded dataframe
 df = pd.read_csv(os.path.join(root_dir,'rxrx1_v1.0','metadata.csv'))
@@ -53,7 +52,6 @@ df['mean'] = 0.0
 df['variance'] = 0.0
 
 #transformation to convert the images into meaningful torch tensors
-std_transform = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float, scale=True)])
 
 """
 This dictionary is used for a progressive group-by operation, taking advantage of 
@@ -76,19 +74,19 @@ tensor_dict = defaultdict(list)
 print('Iteration start!')
 for i , data in enumerate(dataloader):
     #getting the tensor, transforming it
-    t = std_transform(data[0])
+    t:torch.Tensor = data[0]
     
     #updating the values in the dict
     key = value = df.at[i, group_key]
     if df.at[i,'dataset'] == 'train':
-        tensor_dict[key].append(t)
+        tensor_dict[key].append(t.clone())
 
     #useful 
     if (i+1)%1000 == 0:
         print(f'iter number:{i + 1}/{len(dataset)}')
 #create a dict with concatenated tensors
 print('Time to concatenate the tensors')
-concat_dict = {key:torch.cat(tensor_dict[key],dim=0) for key in tensor_dict}
+concat_dict = {key:torch.cat(tensor_dict[key],dim=0).to(torch.float) for key in tensor_dict}
 
 #new dict to save mean and var, for each group
 mean_dict = {key:(0.0) for key in tensor_dict}

@@ -266,3 +266,58 @@ def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir
         name
     )
     print(f"Model saved in {name}.")
+
+def custom_collate_fn(batch):
+    """
+    Custom collate function for processing a batch of Rxrx1 dataset images.
+
+    This function performs the following steps:
+    1. Converts images from uint8 to float format.
+    2. Normalizes images using mean and variance from metadata.
+    3. Applies a series of augmentations to each normalized image.
+    4. Stacks and concatenates original and augmented images.
+
+    The batch will be composed by:
+     - batch_size normal images
+     - batch size augmented images
+    The correspondance between each original image and its augmented counterpart is:
+    batch[i] --> batch[i + 256]
+
+    Args:
+        batch (list of tuples): Each tuple contains:
+            - image (Tensor): Raw image in uint8 format.
+            - sirna_id (int): Identifier for the sirna.
+            - metadata (list): Metadata containing mean and variance for normalization.
+
+    Returns:
+        tuple: (tot_images, sirna_ids, metadata)
+            - tot_images (Tensor): Concatenated tensor of normalized and augmented images.
+            - sirna_ids (tuple): Tuple of sirna IDs.
+            - metadata (tuple): Tuple of metadata for each sample.
+    """
+    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])
+    # view for self supervised learning
+    augmentation = transforms.Compose([
+        transforms.RandomResizedCrop(256),
+        transforms.ColorJitter(brightness=0.5, contrast=0.5),
+        transforms.GaussianBlur(3, sigma=(0.1, 2.0))
+])
+    images, sirna_ids, metadata = zip(*batch)
+    augmented_images = []
+    norm_images = []
+    for i, image in enumerate(images):
+        mean = metadata[i][11]
+        variance = metadata[i][12]
+        image = image_to_tensor(image)
+        image = (image - mean)/variance
+        aug_image = augmentation(image)
+
+        augmented_images.append(aug_image)
+        norm_images.append(image)
+
+    norm_images = torch.stack(norm_images) 
+    augmented_images = torch.stack(augmented_images)
+
+    tot_images = torch.cat([norm_images,augmented_images],dim=0)
+
+    return tot_images, sirna_ids, metadata
