@@ -31,7 +31,7 @@ class Rxrx1(Dataset):
         __len__(): Returns the total number of items in the dataset.
     """
 
-    def __init__(self, root_dir = None):
+    def __init__(self, root_dir = None, metadata_filename = 'metadata.csv'):
         if root_dir is None:
             raise RuntimeError('Rxrx1 dataset needs to be explicitly initialized with a root_dir')
         # self.le_ = LabelEncoder()
@@ -40,7 +40,7 @@ class Rxrx1(Dataset):
         if not os.path.exists(self.root_dir):
             raise RuntimeError(f'Rxrx1 dataset was initialized with a non-existing root_dir: {self.root_dir}')
         self.imgs_dir = os.path.join(self.root_dir, "images")
-        self.metadata = pd.read_csv(os.path.join(self.root_dir, "metadata.csv"))
+        self.metadata = pd.read_csv(os.path.join(self.root_dir, metadata_filename))
         # self.le_.fit(self.metadata['cell_type'].unique())
         # self.metadata['cell_type'] = self.le_.transform(self.metadata['cell_type'])
         self.items = [(os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' +
@@ -52,4 +52,5 @@ class Rxrx1(Dataset):
 
     def __len__(self):
         return len(self.items)
+    
     
