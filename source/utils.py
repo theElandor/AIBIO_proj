@@ -11,7 +11,7 @@ import numpy as np
 from typing import Callable
 import yaml, random
 from pathlib import Path
-
+import math
 
 def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:
     """!Load only network weights from checkpoint."""
@@ -309,7 +309,7 @@ def custom_collate_fn(batch):
         mean = metadata[i][11]
         variance = metadata[i][12]
         image = image_to_tensor(image)
-        image = (image - mean)/variance
+        image = (image - mean)/math.sqrt(variance)
         aug_image = augmentation(image)
 
         augmented_images.append(aug_image)
@@ -321,3 +321,9 @@ def custom_collate_fn(batch):
     tot_images = torch.cat([norm_images,augmented_images],dim=0)
 
     return tot_images, sirna_ids, metadata
+
+def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
+    x_batch, _, _ = data
+    out_feat = net.forward(x_batch.to(device))
+    loss = loss_func(out_feat, device)
+    return loss

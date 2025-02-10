@@ -53,4 +53,7 @@ class Rxrx1(Dataset):
     def __len__(self):
         return len(self.items)
     
+    def get_metadata(self):
+        return self.metadata
+    
     
