@@ -142,7 +142,7 @@ def load_loss(lossname: str) -> Callable:
 def load_opt(config: dict, net: torch.nn.Module) -> torch.optim.Optimizer:
     if config['opt'] == "adam":
         opt = torch.optim.Adam(net.parameters(), lr=config['lr'], weight_decay=0.00001)
-        sched = torch.optim.lr_scheduler.PolynomialLR(opt, total_iters=config['epochs'], power=2.0)
+        sched = torch.optim.lr_scheduler.PolynomialLR(opt, total_iters=config['epochs'], power=config['sched_pow'])
         return opt, sched
     else:
         raise ValueError("Invalid optimizer")
