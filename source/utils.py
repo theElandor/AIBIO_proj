@@ -193,11 +193,17 @@ def config_loader(config):
 
     if config['num_classes'] is not None:
         options['num_classes'] = config['num_classes']
+    
+    assert 'collate_fun' in config, "Please provide a valid collate function."
+    if config['collate_fun'] == "simclr_collate":
+        collate = simclr_collate
+    elif config['collate_fun'] == "simple_collate":
+        collate = simple_collate
 
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
     opt, sched = load_opt(config, net)
-    return (net, loss, opt, sched)
+    return (net, loss, opt, sched, collate)
 
 # Losser (loss calculator) for self supervised learning with simCLR
 
@@ -224,18 +230,19 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
 # Losser for supervised learning. Classification of cell types
 
 
-def cell_type_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
-    x_batch, metadata, _ = data
-    out_feat = net(x_batch.to(torch.float).to(device))
-    # metadata[0] contains the cell type
-    loss = loss_func(out_feat, metadata[:, 0].to(device))
-    return loss
+# da mettere a posto
+# def cell_type_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
+#     x_batch, siRNA, metadata = data
+#     out_feat = net(x_batch.to(torch.float).to(device))
+#     # metadata[0] contains the cell type
+#     loss = loss_func(out_feat, metadata[:, 0].to(device))
+#     return loss
 
 
 def perturbations_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
-    x_batch, _, siRNA_batch = data
+    x_batch, siRNA, metadata = data
     out_feat = net(x_batch.to(torch.float).to(device))
-    loss = loss_func(out_feat, siRNA_batch.to(device))
+    loss = loss_func(out_feat, torch.tensor(siRNA).to(device))
     return loss
 
 
@@ -244,7 +251,7 @@ def validation_loss(net, val_loader, device, loss_func, losser, epoch):
     pbar = tqdm(total=len(val_loader), desc=f"validation-{epoch+1}")
     with net.eval() and torch.no_grad():
         for x_batch, siRNA_batch, metadata, in val_loader:
-            loss = losser(device, (x_batch, metadata, siRNA_batch), net, loss_func)
+            loss = losser(device, (x_batch, siRNA_batch, metadata), net, loss_func)
             validation_loss_values.append(loss.item())
             wandb.log({"val_loss": loss.item()})
             pbar.update(1)
@@ -270,7 +277,7 @@ def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir
     )
     print(f"Model saved in {name}.")
 
-def custom_collate_fn(batch):
+def simclr_collate(batch):
     """
     Custom collate function for processing a batch of Rxrx1 dataset images.
 
@@ -324,6 +331,25 @@ def custom_collate_fn(batch):
     tot_images = torch.cat([norm_images,augmented_images],dim=0)
 
     return tot_images, sirna_ids, metadata
+
+def simple_collate(batch):
+    """
+    Simple collate function used to normalize images for supervised learning.
+    It performs the same steps of the simclr_collate without augmentation,
+    so it only performs normalization.
+    """
+    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])    
+    images, sirna_ids, metadata = zip(*batch)    
+    norm_images = []
+    for i, image in enumerate(images):
+        mean = metadata[i][11]
+        variance = metadata[i][12]
+        image = image_to_tensor(image)
+        image = (image - mean)/math.sqrt(variance)
+        norm_images.append(image)
+    norm_images = torch.stack(norm_images)         
+    return norm_images, sirna_ids, metadata
+
 
 def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
     x_batch, _, _ = data
