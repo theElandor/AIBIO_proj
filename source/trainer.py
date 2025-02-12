@@ -148,7 +148,7 @@ class Trainer():
 
 class Norm_Trainer():
     def __init__(self, net, device, config, opt, loss_func, scheduler=None):
-        self.net = nn.DataParallel(net.to(device))
+        self.net = net.to(device)
         self.device = device
         self.config = config
         self.opt = opt

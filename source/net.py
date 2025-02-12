@@ -23,7 +23,26 @@ class SimCLR(nn.Module):
         features = self.backbone(x)
         projections = self.projection_head(features)
         return projections
+class SimCLR34_norm(nn.Module):
+    def __init__(self):
+        super(SimCLR34_norm, self).__init__()
+        '''resnet = models.resnet34(weights='DEFAULT')
+        resnet = nn.Sequential(resnet.children())'''
+        self.backbone = models.resnet34(weights='DEFAULT')
+        self.backbone.fc = nn.Identity()  # fully-connected removed
+        self.projection_head = nn.Sequential(
+            nn.Linear(512,256, bias=False),  
+            nn.BatchNorm1d(256),  
+            nn.ReLU(),
+            nn.Linear(256, 128, bias=False),  
+            nn.BatchNorm1d(128)  
+        )
 
+    def forward(self, x):
+        features = self.backbone(x)
+        projections = self.projection_head(features)
+        return projections
+    
 class FcHead(nn.Module):
     def __init__(self, num_classes: int):
         super(FcHead, self).__init__()

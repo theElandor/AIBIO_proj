@@ -113,6 +113,9 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr":
         from source.net import SimCLR
         return SimCLR()
+    if netname == "simclr34_norm":
+        from source.net import SimCLR34_norm
+        return SimCLR34_norm()
     if netname == "fc_head":
         assert 'num_classes' in options.keys(), "Provide parameter 'num_classes' for FCHead!"
         from source.net import FcHead
