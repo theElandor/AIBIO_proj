@@ -26,8 +26,6 @@ class SimCLR(nn.Module):
 class SimCLR34_norm(nn.Module):
     def __init__(self):
         super(SimCLR34_norm, self).__init__()
-        '''resnet = models.resnet34(weights='DEFAULT')
-        resnet = nn.Sequential(resnet.children())'''
         self.backbone = models.resnet34(weights='DEFAULT')
         self.backbone.fc = nn.Identity()  # fully-connected removed
         self.projection_head = nn.Sequential(
