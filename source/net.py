@@ -41,6 +41,25 @@ class SimCLR34_norm(nn.Module):
         projections = self.projection_head(features)
         return projections
     
+class SimCLR50_norm(nn.Module):
+    def __init__(self):
+        super(SimCLR50_norm, self).__init__()
+        self.backbone = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
+        self.backbone.fc = nn.Identity()  # fully-connected removed
+        self.projection_head = nn.Sequential(
+            nn.Linear(2048,1024, bias=False),  
+            nn.BatchNorm1d(1024),  
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(1024, 256, bias=False),  
+            nn.BatchNorm1d(256)  
+        )
+
+    def forward(self, x):
+        features = self.backbone(x)
+        projections = self.projection_head(features)
+        return projections
+    
 class FcHead(nn.Module):
     def __init__(self, num_classes: int):
         super(FcHead, self).__init__()
