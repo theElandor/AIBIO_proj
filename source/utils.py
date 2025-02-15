@@ -119,10 +119,16 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr50_norm":
         from source.net import SimCLR50_norm
         return SimCLR50_norm()
-    if netname == "fc_head":
+
+    if netname.startswith("fc_head"):
         assert 'num_classes' in options.keys(), "Provide parameter 'num_classes' for FCHead!"
+    if netname == "fc_head":
         from source.net import FcHead
         return FcHead(num_classes=options['num_classes'])
+    if netname == "fc_head50":
+        from source.net import FcHead50
+        return FcHead50(num_classes=options['num_classes'])
+        
     if netname == "cell_classifier":
         assert 'backbone' in options.keys() and 'head' in options.keys(
         ), "Provide parameter 'backbone' and 'head' for end-to-end train!"
