@@ -1,8 +1,10 @@
 # MODEL
 backbone: ~
 backbone_weights: ~
+freeze_backbone: ~
 
 head: ~
+head_weights: ~
 num_classes: ~
 
 net: simclr # choose among [simclr, simclr34_norm, simclr50_norm, simclr50_v2, fc_head, cell_classifier, resnet]

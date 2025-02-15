@@ -86,14 +86,21 @@ class FcHead(nn.Module):
     def __init__(self, num_classes: int):
         super(FcHead, self).__init__()
         self.num_classes = num_classes
-        # need to remove hardcoded 512,
-        # need to take the output of the last layer of the backbone
-        # head used for cell type classification, so 4 is hardcoded.
         self.fc = nn.Linear(512, self.num_classes)
 
     def forward(self, x):
         return self.fc(x)
     
+class FcHead50(nn.Module):
+    def __init__(self, num_classes: int):
+        super(FcHead50, self).__init__()
+        self.num_classes = num_classes
+        self.fc = nn.Linear(2048, self.num_classes)
+
+    def forward(self, x):
+        return self.fc(x)
+
+
 class ResNet(nn.Module):
     """!Simple resnet to try end-to-end classification of siRNA or cell type."""
     
