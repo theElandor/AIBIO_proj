@@ -73,6 +73,7 @@ class SimCLR50_v2(nn.Module):
         self.classifier = nn.Linear(in_features = embedding_size,out_features = num_classes)
         self.drop_head = drop_head
         
+        initialize_weights(self.classifier)
     def forward(self, x):
         embedding = self.backbone(x)
         if self.drop_head:

@@ -119,6 +119,16 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr50_norm":
         from source.net import SimCLR50_norm
         return SimCLR50_norm()
+    if netname == "simclr50_v2":
+        from source.net import SimCLR50_v2
+        assert 'drop_head' in options.keys(), 'Provide a dictionary with \'drop_head\' key for SimCLR50_v2'
+        assert 'num_classes' in options.keys(), 'Provide a dictionary with \'num_classes\' key for SimCLR50_v2'
+        assert 'embedding_size' in options.keys(), 'Provide a dictionary with \'embedding_size\' key for SimCLR50_v2'
+        return SimCLR50_v2(
+            drop_head = options['drop_head'],
+            num_classes= options['num_classes'],
+            embedding_size= options['embedding_size']
+            )
     if netname == "fc_head":
         assert 'num_classes' in options.keys(), "Provide parameter 'num_classes' for FCHead!"
         from source.net import FcHead
