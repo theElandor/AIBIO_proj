@@ -1,11 +1,13 @@
 # MODEL
 backbone: ~
 backbone_weights: ~
+freeze_backbone: ~
 
 head: ~
+head_weights: ~
 num_classes: ~
 
-net: simclr # choose among [simclr, simclr34_norm, simclr50_norm fc_head, cell_classifier, resnet]
+net: simclr # choose among [simclr, simclr34_norm, simclr50_norm fc_head, fc_head50, cell_classifier, resnet]
 
 # DIRECTORIES
 checkpoint_dir: /work/h2020deciderficarra_shared/rxrx1/checkpoints/simclr_backbone
