@@ -359,3 +359,26 @@ def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Mod
     out_feat = net.forward(x_batch.to(device))
     loss = loss_func(out_feat, device)
     return loss
+
+
+import torch
+import torch.nn as nn
+
+def initialize_weights(module):
+    """
+    Recursively initializes the weights of a module and its submodules using Kaiming initialization
+    for Linear layers, and uniform initialization for BatchNorm layers.
+    """
+    if isinstance(module, nn.Linear):
+        nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+    elif isinstance(module, nn.BatchNorm2d):
+        nn.init.constant_(module.weight, 1)
+        nn.init.constant_(module.bias, 0)
+    
+    for submodule in module.children():
+        initialize_weights(submodule)
+
+
+

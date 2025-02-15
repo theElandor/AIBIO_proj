@@ -5,7 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import torch.nn as nn
 from torchvision import models
-from source.utils import load_weights
+from source.utils import load_weights, initialize_weights
 
 
 class SimCLR(nn.Module):
@@ -59,6 +59,27 @@ class SimCLR50_norm(nn.Module):
         features = self.backbone(x)
         projections = self.projection_head(features)
         return projections
+    
+class SimCLR50_v2(nn.Module):
+    '''
+    This net discards the droppable projection head and incorporates a droppable classification head
+    '''
+    def __init__(self,drop_head:bool,num_classes:int,embedding_size = 512):
+        super(SimCLR50_v2, self).__init__()
+        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
+        resnet.fc = nn.Linear(in_features = 2048,out_features = embedding_size)
+        
+        self.backbone = resnet
+        self.classifier = nn.Linear(in_features = embedding_size,out_features = num_classes)
+        self.drop_head = drop_head
+        
+    def forward(self, x):
+        embedding = self.backbone(x)
+        if self.drop_head:
+            return embedding
+        else:
+            output = self.classifier(embedding)
+            return output
     
 class FcHead(nn.Module):
     def __init__(self, num_classes: int):
