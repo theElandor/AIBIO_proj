@@ -7,8 +7,11 @@ head: ~
 head_weights: ~
 num_classes: ~
 
+net: simclr # choose among [simclr, simclr34_norm, simclr50_norm, simclr50_v2, fc_head, cell_classifier, resnet]
 
-net: simclr # choose among [simclr, simclr34_norm, simclr50_norm, fc_head, fc_head50, cell_classifier, resnet]
+# CONFIGS FOR MODELS THAT DROP THE FC HEAD
+drop_head: ~ # choose among [~ , True, False]
+embedding_size: ~ #default: 512
 
 # DIRECTORIES
 checkpoint_dir: /work/h2020deciderficarra_shared/rxrx1/checkpoints/simclr_backbone

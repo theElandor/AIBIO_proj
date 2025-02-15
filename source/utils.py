@@ -119,7 +119,16 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr50_norm":
         from source.net import SimCLR50_norm
         return SimCLR50_norm()
-
+    if netname == "simclr50_v2":
+        from source.net import SimCLR50_v2
+        assert 'drop_head' in options.keys(), 'Provide a dictionary with \'drop_head\' key for SimCLR50_v2'
+        assert 'num_classes' in options.keys(), 'Provide a dictionary with \'num_classes\' key for SimCLR50_v2'
+        assert 'embedding_size' in options.keys(), 'Provide a dictionary with \'embedding_size\' key for SimCLR50_v2'
+        return SimCLR50_v2(
+            drop_head = options['drop_head'],
+            num_classes= options['num_classes'],
+            embedding_size= options['embedding_size']
+            )
     if netname.startswith("fc_head"):
         assert 'num_classes' in options.keys(), "Provide parameter 'num_classes' for FCHead!"
     if netname == "fc_head":
@@ -365,3 +374,26 @@ def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Mod
     out_feat = net.forward(x_batch.to(device))
     loss = loss_func(out_feat, device)
     return loss
+
+
+import torch
+import torch.nn as nn
+
+def initialize_weights(module):
+    """
+    Recursively initializes the weights of a module and its submodules using Kaiming initialization
+    for Linear layers, and uniform initialization for BatchNorm layers.
+    """
+    if isinstance(module, nn.Linear):
+        nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+    elif isinstance(module, nn.BatchNorm2d):
+        nn.init.constant_(module.weight, 1)
+        nn.init.constant_(module.bias, 0)
+    
+    for submodule in module.children():
+        initialize_weights(submodule)
+
+
+
