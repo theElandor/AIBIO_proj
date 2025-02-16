@@ -12,15 +12,25 @@ from typing import Callable
 import yaml, random
 from pathlib import Path
 import math
+from source.vision_transformer import VisionTransformer
+from functools import partial
+import torch.nn as nn
 
 def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:
     """!Load only network weights from checkpoint."""
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    if list(checkpoint['model_state_dict'])[0].__contains__('module'):
-        model_dict = {key.replace("module.", ""): value for key, value in checkpoint['model_state_dict'].items()}
+
+    # VisionTransformer module has its own custom loader
+    if isinstance(net, VisionTransformer):
+        checkpoint = load_dino_weights(net, checkpoint_path)
+
+    # Load weights procedure for other models
     else:
-        model_dict = checkpoint['model_state_dict']
-    net.load_state_dict(model_dict)
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        if list(checkpoint['model_state_dict'])[0].__contains__('module'):
+            model_dict = {key.replace("module.", ""): value for key, value in checkpoint['model_state_dict'].items()}
+        else:
+            model_dict = checkpoint['model_state_dict']
+        net.load_state_dict(model_dict)
     return checkpoint
 
 
@@ -110,6 +120,7 @@ def info_nce_loss(features, device, temperature=0.15):
 
 
 def load_net(netname: str, options={}) -> torch.nn.Module:
+#   ===========Resnet Backbones=================    
     if netname == "simclr":
         from source.net import SimCLR
         return SimCLR()
@@ -119,7 +130,11 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr50_norm":
         from source.net import SimCLR50_norm
         return SimCLR50_norm()
+#   ===========VIT backbones=================
+    if netname == "vit_small":
+        return vit_small()
 
+#   ===========FC Heads=================
     if netname.startswith("fc_head"):
         assert 'num_classes' in options.keys(), "Provide parameter 'num_classes' for FCHead!"
     if netname == "fc_head":
@@ -128,12 +143,17 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "fc_head50":
         from source.net import FcHead50
         return FcHead50(num_classes=options['num_classes'])
-        
+    if netname == "fc_head_dino384":
+        from source.net import FcHeadDino_384
+        return FcHeadDino_384(num_classes=options['num_classes'])
+
+#   ===========Backbone + Head architectures=================
     if netname == "cell_classifier":
         assert 'backbone' in options.keys() and 'head' in options.keys(
         ), "Provide parameter 'backbone' and 'head' for end-to-end train!"
         from source.net import CellClassifier
         return CellClassifier(options["backbone"], options["head"])
+
     if netname == "resnet":
         assert 'num_classes' in options.keys(), "To build a end-to-end resnet, specify 'num_classes'."
         from source.net import ResNet
@@ -208,6 +228,8 @@ def config_loader(config):
         collate = simclr_collate
     elif config['collate_fun'] == "simple_collate":
         collate = simple_collate
+    elif config['collate_fun'] == 'dino_test_collate':
+        collate = dino_test_collate
 
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
@@ -359,9 +381,70 @@ def simple_collate(batch):
     norm_images = torch.stack(norm_images)         
     return norm_images, sirna_ids, metadata
 
+def dino_test_collate(batch):
+    """
+    Transformations used for dino training that must be used also 
+    during validation and head training. For now we are just
+    normalizing using ImageNet values of mean and standard deviation.
+    A little bit of code is repeated here for the sake of testing.
+    """
+    image_to_tensor = transforms.Compose([
+        transforms.ToImage(), 
+        transforms.ToDtype(torch.float),
+        transforms.CenterCrop(224)
+        ])
+    images, sirna_ids, metadata = zip(*batch)
+    mean = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
+    std = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
+    norm_images = []
+    for i, image in enumerate(images):
+        variance = metadata[i][12]
+        image = image_to_tensor(image)
+        image = (image - mean)/std
+        norm_images.append(image)
+    norm_images = torch.stack(norm_images)         
+    return norm_images, sirna_ids, metadata
+
+    # Piece of code used in the original repo....
+    # dino_transforms = pth_transforms.Compose([
+    #     pth_transforms.Resize(256, interpolation=3),
+    #     pth_transforms.CenterCrop(224),
+    #     pth_transforms.ToTensor(),
+    #     pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    # ])
+
 
 def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
     x_batch, _, _ = data
     out_feat = net.forward(x_batch.to(device))
     loss = loss_func(out_feat, device)
     return loss
+
+def vit_small(patch_size=16, **kwargs):
+    """
+    Returns a small vision transformer. (Code taken from original repo)
+    """
+    model = VisionTransformer(
+        patch_size=patch_size, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
+def load_dino_weights(model, pretrained_weights, checkpoint_key="student"):
+    """
+    Function to load dino-vit weights. Taken from https://github.com/facebookresearch/dino/blob/main/utils.py
+    """
+    if os.path.isfile(pretrained_weights):
+        state_dict = torch.load(pretrained_weights, map_location="cpu")
+        if checkpoint_key is not None and checkpoint_key in state_dict:
+            print(f"Take key {checkpoint_key} in provided checkpoint dict")
+            state_dict = state_dict[checkpoint_key]
+        # remove `module.` prefix
+        state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        # remove `backbone.` prefix induced by multicrop wrapper
+        state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
+        msg = model.load_state_dict(state_dict, strict=False)
+        print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
+    else:
+        print("Please provide a valid file.")
+        return None
+    return state_dict

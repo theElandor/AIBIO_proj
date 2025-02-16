@@ -8,10 +8,10 @@ head_weights: ~
 num_classes: ~
 
 
-net: simclr # choose among [simclr, simclr34_norm, simclr50_norm, fc_head, fc_head50, cell_classifier, resnet]
+net: simclr # choose among [simclr, simclr34_norm, simclr50_norm, fc_head, fc_head50, fc_head_dino384, cell_classifier, resnet]
 
 # DIRECTORIES
-checkpoint_dir: /work/h2020deciderficarra_shared/rxrx1/checkpoints/simclr_backbone
+checkpoint_dir: ~
 dataset_dir: /work/ai4bio2024/rxrx1
 load_checkpoint: ~
 
@@ -20,7 +20,7 @@ epochs: 20
 batch_size: 256
 loss: NCE # choose among [NCE, cross_entropy]
 opt: adam # choose among [adam,]
-collate_fun: simclr_collate # chose among [simclr_collate, simple_collate]
+collate_fun: simclr_collate # chose among [simclr_collate, simple_collate, dino_test_collate]
 lr: 0.005
 evaluation_freq: 4
 model_save_freq: 4
