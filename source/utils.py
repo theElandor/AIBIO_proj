@@ -8,11 +8,11 @@ import torch, wandb
 import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
-from typing import Callable
+from typing import Callable, List, Tuple
 import yaml, random
 from pathlib import Path
 import math
-
+from collections import namedtuple
 def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:
     """!Load only network weights from checkpoint."""
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -119,16 +119,6 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
     if netname == "simclr50_norm":
         from source.net import SimCLR50_norm
         return SimCLR50_norm()
-    if netname == "simclr50_v2":
-        from source.net import SimCLR50_v2
-        assert 'drop_head' in options.keys(), 'Provide a dictionary with \'drop_head\' key for SimCLR50_v2'
-        assert 'num_classes' in options.keys(), 'Provide a dictionary with \'num_classes\' key for SimCLR50_v2'
-        assert 'embedding_size' in options.keys(), 'Provide a dictionary with \'embedding_size\' key for SimCLR50_v2'
-        return SimCLR50_v2(
-            drop_head = options['drop_head'],
-            num_classes= options['num_classes'],
-            embedding_size= options['embedding_size']
-            )
     if netname == "fc_head":
         assert 'num_classes' in options.keys(), "Provide parameter 'num_classes' for FCHead!"
         from source.net import FcHead
@@ -238,7 +228,7 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
     block = torch.cat([standard_views, augmented_views], dim=0)
     out_feat = net.forward(block.to(torch.float))
     loss = loss_func(out_feat, device)
-    return loss
+    return loss, None
 
 # Losser for supervised learning. Classification of cell types
 
@@ -252,25 +242,70 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
 #     return loss
 
 
-def perturbations_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
+def perturbations_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable)-> Tuple[torch.Tensor, namedtuple]:
     x_batch, siRNA, metadata = data
     out_feat = net(x_batch.to(torch.float).to(device))
     loss = loss_func(out_feat, torch.tensor(siRNA).to(device))
-    return loss
+    predicted_labels = out_feat.argmax(dim=1)
+
+    #getting the correct guesses and the total guesses
+    correct_labels = (predicted_labels == torch.tensor(siRNA).to(device)).sum().item()
+    total_labels = torch.tensor(siRNA).shape[0]
+
+    #putting the results in a named tuple to improve code readability
+    AccuracyTuple = namedtuple('acc_tup',['correct_labels','total_labels'])
+    accuracy_tuple = AccuracyTuple(correct_labels=correct_labels,total_labels=total_labels)
+
+    return loss, accuracy_tuple
 
 
-def validation_loss(net, val_loader, device, loss_func, losser, epoch):
-    validation_loss_values = []
+def validation(net, val_loader, device, loss_func, losser, epoch)-> Tuple[List[float],float]:
+    """
+    Computes the validation loss for a given neural network model.
+
+    Parameters:
+    - net: The neural network model.
+    - val_loader: DataLoader for the validation dataset.
+    - device: The device (CPU/GPU) where computations will be performed.
+    - loss_func: The loss function used for evaluation.
+    - losser: A function that computes the loss given the model, inputs, and loss function.
+    - epoch: The current epoch number (used for logging).
+
+    Returns:
+    - validation_loss_values: A list of loss values for each validation batch.
+    - accuracy: The total accuracy calculated on the whole testing set
+    """
+
+    validation_loss_values = []  # List to store loss values for each batch
+
+    # Create a progress bar for validation
     pbar = tqdm(total=len(val_loader), desc=f"validation-{epoch+1}")
-    with net.eval() and torch.no_grad():
-        for x_batch, siRNA_batch, metadata, in val_loader:
-            loss = losser(device, (x_batch, siRNA_batch, metadata), net, loss_func)
+
+    # Ensure model is in evaluation mode and disable gradient computation
+    tot_right_guesses = 0.0
+    tot_guesses = 0.0
+    net.eval()
+    with torch.no_grad():
+        for x_batch, siRNA_batch, metadata in val_loader:  # Iterate through validation data
+            # Compute loss using the provided 'losser' function
+            loss, accuracy_tuple = losser(device, (x_batch, siRNA_batch, metadata), net, loss_func)
+            if accuracy_tuple is None:
+                raise RuntimeError('You called a validation() function on a losser that doesn\'t output accuracy values!')
+            
+            # Store the loss value
             validation_loss_values.append(loss.item())
-            wandb.log({"val_loss": loss.item()})
+
+            # Store the right and the total guesses
+            tot_right_guesses += accuracy_tuple.correct_labels
+            tot_guesses += accuracy_tuple.total_labels
+
+            # Update the progress bar
             pbar.update(1)
             pbar.set_postfix({"Validation Loss": loss.item()})
 
-    return validation_loss_values
+    accuracy = tot_right_guesses / tot_guesses if tot_guesses > 0 else 0.0 # Division by zero paranoia
+    return validation_loss_values, accuracy # Return the collected validation loss values
+
 
 
 def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir, optimizer, scheduler=None):
@@ -368,7 +403,7 @@ def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Mod
     x_batch, _, _ = data
     out_feat = net.forward(x_batch.to(device))
     loss = loss_func(out_feat, device)
-    return loss
+    return loss , None
 
 
 import torch

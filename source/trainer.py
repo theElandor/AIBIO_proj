@@ -10,7 +10,7 @@ from dataset import Rxrx1
 
 class Norm_Trainer():
     def __init__(self, net, device, config, opt, loss_func, collate, scheduler=None):
-        self.net = nn.DataParallel(net.to(device))
+        self.net = net.to(device)
         self.device = device
         self.config = config
         self.opt = opt
@@ -41,7 +41,7 @@ class Norm_Trainer():
             config=self.config
         )
 
-    def train(self, dataset:Rxrx1, losser):
+    def train(self, dataset:Rxrx1, losser,log_accuracy = False):
         """
     Trains a neural network model using the specified dataset and configurations.
 
@@ -128,7 +128,7 @@ class Norm_Trainer():
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
             self.net.train()
             for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):
-                loss = losser(device, (x_batch, siRNA_batch, metadata), self.net, self.loss_func)
+                loss, _ = losser(device, (x_batch, siRNA_batch, metadata), self.net, self.loss_func)
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
@@ -142,13 +142,31 @@ class Norm_Trainer():
                 save_model(epoch, self.net, self.opt, training_loss_values, validation_loss_values,
                            self.config['batch_size'], self.config['checkpoint_dir'], self.config['opt'], self.scheduler)
 
+            # Evaluation
             if (epoch + 1) % int(self.config['evaluation_freq']) == 0:
                 print(f"Running Validation-{str(epoch+1)}...")
-                validation_loss_values += validation_loss(self.net, val_dataloader,
-                                                          self.device, self.loss_func, losser, epoch)
+                val_loss, accuracy = validation(net = self.net, 
+                                                val_loader = val_dataloader, 
+                                                device = self.device, 
+                                                loss_func = self.loss_func, 
+                                                losser = losser, 
+                                                epoch = epoch)
+                validation_loss_values += val_loss
+                mean_loss = sum(val_loss) / len(val_loss) if val_loss else 0  # Division by zero paranoia
+
+                # Wandb time!
+                wandb.log({"val_loss": mean_loss})
+                if log_accuracy:
+                    wandb.log({"accuracy": accuracy})
 
             if (self.scheduler is not None):
                 self.scheduler.step()
-                wandb.log({"lr": self.scheduler.get_last_lr()})
+                last_lr = self.scheduler.get_last_lr()
+                if isinstance(last_lr, list) and len(last_lr) == 1:
+                    last_lr = last_lr[0]
+                    wandb.log({"lr": last_lr})
+                elif isinstance(last_lr, list) and len(last_lr) > 1:
+                    for i, lr in enumerate(last_lr):
+                        wandb.log({f"lr_{i}": lr[i]})
 
         return training_loss_values, validation_loss_values
