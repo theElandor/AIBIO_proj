@@ -5,11 +5,7 @@ backbone_weights: ~
 head: ~
 num_classes: ~
 
-net: simclr # choose among [simclr, simclr34_norm, simclr50_norm, simclr50_v2, fc_head, cell_classifier, resnet]
-
-# CONFIGS FOR MODELS THAT DROP THE FC HEAD
-drop_head: ~ # choose among [~ , True, False]
-embedding_size: ~ #default: 512
+net: simclr # choose among [simclr, simclr34_norm, simclr50_norm, fc_head, cell_classifier, resnet]
 
 # DIRECTORIES
 checkpoint_dir: /work/h2020deciderficarra_shared/rxrx1/checkpoints/simclr_backbone
@@ -25,6 +21,7 @@ collate_fun: simclr_collate # chose among [simclr_collate, simple_collate]
 lr: 0.005
 evaluation_freq: 4
 model_save_freq: 4
+log_accuracy: False # choose among [True, False]
 grouper: ~ # choose among [experiment, cell_type, ...]
 sched_pow: 1.5
 
