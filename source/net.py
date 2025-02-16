@@ -62,33 +62,13 @@ class SimCLR50_norm(nn.Module):
         projections = self.projection_head(features)
         return projections
     
-class SimCLR50_v2(nn.Module):
-    '''
-    This net discards the droppable projection head and incorporates a droppable classification head
-    '''
-    def __init__(self,drop_head:bool,num_classes:int,embedding_size = 512):
-        super(SimCLR50_v2, self).__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
-        resnet.fc = nn.Linear(in_features = 2048,out_features = embedding_size)
-        
-        self.backbone = resnet
-        self.classifier = nn.Linear(in_features = embedding_size,out_features = num_classes)
-        self.drop_head = drop_head
-        
-        initialize_weights(self.classifier)
-    def forward(self, x):
-        embedding = self.backbone(x)
-        if self.drop_head:
-            return embedding
-        else:
-            output = self.classifier(embedding)
-            return output
-    
 class FcHead(nn.Module):
-    def __init__(self, num_classes: int):
+    def __init__(self, num_classes: int,embedding_size: int = 512):
         super(FcHead, self).__init__()
         self.num_classes = num_classes
-        self.fc = nn.Linear(512, self.num_classes)
+
+        # for future work: this parameter could be inferred from the backbone
+        self.fc = nn.Linear(embedding_size, self.num_classes)
 
     def forward(self, x):
         return self.fc(x)

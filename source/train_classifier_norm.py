@@ -14,5 +14,11 @@ if __name__ == "__main__":
     device = load_device(config)
     dataset = Rxrx1(config['dataset_dir'],'metadata_plate_norm.csv')
     net, loss_func, opt, sched, collate = config_loader(config)
+    
+    #for future work: instead of hardcoding it, this freeze could be determined by the configuration
+    net.freeze_backbone()
+
     tr_ = Norm_Trainer(net, device, config, opt, loss_func, collate, scheduler=sched)
-    training_loss_values, validation_loss_values = tr_.train(dataset, perturbations_processing)
+    training_loss_values, validation_loss_values = tr_.train(dataset = dataset, 
+                                                             losser = perturbations_processing,
+                                                             log_accuracy = config['log_accuracy'])
