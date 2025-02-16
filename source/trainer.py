@@ -85,7 +85,7 @@ class Norm_Trainer():
         >>> trainer = Trainer(config, model, optimizer, loss_func)
         >>> training_loss, validation_loss = trainer.train(split_sizes, dataset, custom_losser)
     """
-
+        #============= Preparing dataset... ==================
         self.init_wandb()
 
         train_workers = self.config["train_workers"]
@@ -110,7 +110,10 @@ class Norm_Trainer():
         val_dataloader = DataLoader(val_dataset, batch_size=self.config["batch_size"], shuffle=True,
                                     num_workers=evaluation_workers, drop_last=True, prefetch_factor=2,collate_fn=self.collate)
 
+        #============= Loading full checkpoint or backbone + head ==================
         if self.config['load_checkpoint'] is not None:
+            assert self.config['backbone_weights'] == None, "Config conflict: can't load a checkpoint and backbone weights."
+            assert self.config['head_weights'] == None, "Config conflict: can't load a checkpoint and head weights."
             print('Loading latest checkpoint... ')
             last_epoch, training_loss_values, validation_loss_values = self.load_checkpoint()
             print(f"Checkpoint {self.config['load_checkpoint']} Loaded")
@@ -119,6 +122,19 @@ class Norm_Trainer():
             training_loss_values = []  # store every training loss value
             validation_loss_values = []  # store every validation loss value
 
+        if self.config['backbone_weights'] is not None:
+            print("Loading backbone weights...")
+            self.net.load_backbone_weights(self.config, self.device)
+            if self.config['freeze_backbone'] is not None:
+                self.net.freeze_backbone()
+            else:
+                print("Warning, you loaded backbone weights without freezing them.")
+
+        if self.config['head_weights'] is not None:
+            print("Loading head weights...")
+            self.net.load_head_weights(self.config, self.device)
+                
+        #============= Training Loop ==================
         self.net.train()
         if self.config['multiple_gpus']:
             self.net = nn.DataParallel(self.net)

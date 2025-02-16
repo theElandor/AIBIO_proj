@@ -5,6 +5,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import torch.nn as nn
 from torchvision import models
+from source.utils import load_weights
+from source.vision_transformer import VisionTransformer
 from source.utils import load_weights, initialize_weights
 
 
@@ -64,14 +66,32 @@ class FcHead(nn.Module):
     def __init__(self, num_classes: int,embedding_size: int = 512):
         super(FcHead, self).__init__()
         self.num_classes = num_classes
-        # need to remove hardcoded 512,
-        # need to take the output of the last layer of the backbone
-        # head used for cell type classification, so 4 is hardcoded.
+
+        # for future work: this parameter could be inferred from the backbone
         self.fc = nn.Linear(embedding_size, self.num_classes)
 
     def forward(self, x):
         return self.fc(x)
     
+class FcHead50(nn.Module):
+    def __init__(self, num_classes: int):
+        super(FcHead50, self).__init__()
+        self.num_classes = num_classes
+        self.fc = nn.Linear(2048, self.num_classes)
+
+    def forward(self, x):
+        return self.fc(x)
+
+class FcHeadDino_384(nn.Module):
+    def __init__(self, num_classes: int):
+        super(FcHeadDino_384, self).__init__()
+        self.num_classes = num_classes
+        self.fc = nn.Linear(384, self.num_classes)
+
+    def forward(self, x):
+        return self.fc(x)
+
+
 class ResNet(nn.Module):
     """!Simple resnet to try end-to-end classification of siRNA or cell type."""
     
@@ -117,6 +137,11 @@ class CellClassifier(nn.Module):
 
     def forward(self, x):
         # in simCLR they don't use the last layer of the backbone
-        x = self.backbone.backbone(x)
+        if isinstance(self.backbone, VisionTransformer):
+            # since ViT is alredy the backbone
+            x = self.backbone(x)
+        else:
+            x = self.backbone.backbone(x)
         x = self.head(x)
         return x
+
