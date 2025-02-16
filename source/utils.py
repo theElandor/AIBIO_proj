@@ -158,6 +158,18 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
         assert 'num_classes' in options.keys(), "To build a end-to-end resnet, specify 'num_classes'."
         from source.net import ResNet
         return ResNet(options['num_classes'])
+
+    if netname == "simclr50_v2":
+        from source.net import SimCLR50_v2
+        assert 'drop_head' in options.keys(), 'Provide a dictionary with \'drop_head\' key for SimCLR50_v2'
+        assert 'num_classes' in options.keys(), 'Provide a dictionary with \'num_classes\' key for SimCLR50_v2'
+        assert 'embedding_size' in options.keys(), 'Provide a dictionary with \'embedding_size\' key for SimCLR50_v2'
+        return SimCLR50_v2(
+            drop_head = options['drop_head'],
+            num_classes= options['num_classes'],
+            embedding_size= options['embedding_size']
+        )
+        
     else:
         raise ValueError("Invalid netname")
 
@@ -448,3 +460,25 @@ def load_dino_weights(model, pretrained_weights, checkpoint_key="student"):
         print("Please provide a valid file.")
         return None
     return state_dict
+
+import torch
+import torch.nn as nn
+
+def initialize_weights(module):
+    """
+    Recursively initializes the weights of a module and its submodules using Kaiming initialization
+    for Linear layers, and uniform initialization for BatchNorm layers.
+    """
+    if isinstance(module, nn.Linear):
+        nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+    elif isinstance(module, nn.BatchNorm2d):
+        nn.init.constant_(module.weight, 1)
+        nn.init.constant_(module.bias, 0)
+    
+    for submodule in module.children():
+        initialize_weights(submodule)
+
+
+
