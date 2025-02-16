@@ -8,7 +8,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": [
-                "/homes/mlugli/AIBIO_proj/config/train/head_train_norm.yaml"
+                "/homes/mlugli/AIBIO_proj/config/train/train_head.yaml"
             ]
         }
     ]
