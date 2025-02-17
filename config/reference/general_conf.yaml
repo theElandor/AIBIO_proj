@@ -6,7 +6,7 @@ freeze_backbone: ~
 head: ~
 head_weights: ~
 num_classes: ~
-
+embedding_size: ~
 net: simclr # choose among [simclr, simclr34_norm, simclr50_norm, simclr50_v2, fc_head, fc_head_dino384, cell_classifier, resnet, vit_small]
 
 # DIRECTORIES
@@ -19,7 +19,7 @@ epochs: 20
 batch_size: 256
 loss: NCE # choose among [NCE, cross_entropy]
 opt: adam # choose among [adam,]
-collate_fun: simclr_collate # chose among [simclr_collate, simple_collate, dino_test_collate]
+collate_fun: simclr_collate # chose among [simclr_collate, simple_collate, dino_test_collate, channelnorm_collate]
 lr: 0.005
 evaluation_freq: 4
 model_save_freq: 4
