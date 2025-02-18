@@ -454,8 +454,8 @@ def channelnorm_collate(batch):
     norm_images = []
     for i, image in enumerate(images):
         #getting the tuples out of the metadata
-        mean_tuple = metadata[i][11]
-        variance_tuple = metadata[i][12]
+        mean_tuple = eval(metadata[i][11])
+        variance_tuple = eval(metadata[i][12])
         
         #converting the tuples to tensors
         mean_tensor = torch.tensor(mean_tuple).view(3,1,1)
@@ -474,29 +474,27 @@ def dino_test_collate(batch):
     during validation and head training. For now we are just
     normalizing using ImageNet values of mean and standard deviation.
     A little bit of code is repeated here for the sake of testing.
+    Requires 3 channel metadata.
     """
     crop = transforms.Compose([
         transforms.CenterCrop(224)
         ])
     images, sirna_ids, metadata = zip(*batch)
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
+    mean_tuple = eval(metadata[i][11])
+    variance_tuple = eval(metadata[i][12])
+    
+    #converting the tuples to tensors
+    mean_tensor = (torch.tensor(mean_tuple).view(3,1,1))/255.0
+    std_tensor = (torch.sqrt(torch.tensor(variance_tuple)).view(3,1,1))/255.0
+    
     norm_images = []
     for i, image in enumerate(images):
         image = image.float() / 255.0 #convert to 0-1 range
-        image = (image - mean)/std # shift using ImageNet mean and std
+        image = (image - mean_tensor)/std_tensor # shift using ImageNet mean and std
         image = crop(image) # center crop according to ViT standard input
         norm_images.append(image)
     norm_images = torch.stack(norm_images)         
     return norm_images, sirna_ids, metadata
-
-    # Piece of code used in the original repo....
-    # dino_transforms = pth_transforms.Compose([
-    #     pth_transforms.Resize(256, interpolation=3),
-    #     pth_transforms.CenterCrop(224),
-    #     pth_transforms.ToTensor(),
-    #     pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    # ])
 
 
 def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):

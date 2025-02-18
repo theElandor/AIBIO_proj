@@ -12,7 +12,7 @@ if __name__ == "__main__":
 
     config = load_yaml()
     device = load_device(config)
-    dataset = Rxrx1(config['dataset_dir'],'metadata_plate_norm.csv')
+    dataset = Rxrx1(config['dataset_dir'],'metadata_plate_norm_3c.csv')
     net, loss_func, opt, sched, collate = config_loader(config)
     tr_ = Norm_Trainer(net, device, config, opt, loss_func, collate, scheduler=sched)
     training_loss_values, validation_loss_values = tr_.train(dataset = dataset, 
