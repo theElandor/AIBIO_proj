@@ -82,16 +82,6 @@ class FcHead50(nn.Module):
     def forward(self, x):
         return self.fc(x)
 
-class FcHeadDino_384(nn.Module):
-    def __init__(self, num_classes: int):
-        super(FcHeadDino_384, self).__init__()
-        self.num_classes = num_classes
-        self.fc = nn.Linear(384, self.num_classes)
-
-    def forward(self, x):
-        return self.fc(x)
-
-
 class ResNet(nn.Module):
     """!Simple resnet to try end-to-end classification of siRNA or cell type."""
     
