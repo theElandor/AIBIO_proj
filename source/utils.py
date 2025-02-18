@@ -138,10 +138,12 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
 
 #   ===========FC Heads=================
     if netname.startswith("fc_head"):
-        assert 'num_classes' in options.keys(), "Provide parameter 'num_classes' for FCHead!"
+        assert 'num_classes' in options.keys(), "Provide parameter 'num_classes' for FCHeads!"
     if netname == "fc_head":
         from source.net import FcHead
-        return FcHead(num_classes=options['num_classes'])
+        assert 'embedding_size' in options.keys(), "Provide parameter 'embedding_size' for FCHead!"
+        assert options['embedding_size'] is not None, "Provide parameter 'embedding_size' for FCHead!"
+        return FcHead(num_classes=options['num_classes'],embedding_size=options['embedding_size'])
     if netname == "fc_head50":
         from source.net import FcHead50
         return FcHead50(num_classes=options['num_classes'])
@@ -231,7 +233,7 @@ def config_loader(config):
         options["backbone"] = backbone
     if config['head'] is not None:
         assert config['num_classes'] is not None, "Please provide the number of classes for the head."
-        head = load_net(config['head'], options={'num_classes': config['num_classes']})
+        head = load_net(config['head'], options={'num_classes': config['num_classes'],'embedding_size':config['embedding_size']})
         options["head"] = head
 
     if config['num_classes'] is not None:
@@ -244,6 +246,8 @@ def config_loader(config):
         collate = simple_collate
     elif config['collate_fun'] == 'dino_test_collate':
         collate = dino_test_collate
+    elif config['collate_fun'] == 'channelnorm_collate':
+        collate = channelnorm_collate
 
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
@@ -437,6 +441,30 @@ def simple_collate(batch):
         image = image_to_tensor(image)
         image = (image - mean)/math.sqrt(variance)
         norm_images.append(image)
+    norm_images = torch.stack(norm_images)         
+    return norm_images, sirna_ids, metadata
+
+def channelnorm_collate(batch):
+    '''
+    Collate function for supervised training
+    It performs channel-wise normalization
+    '''
+    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])    
+    images, sirna_ids, metadata = zip(*batch)    
+    norm_images = []
+    for i, image in enumerate(images):
+        #getting the tuples out of the metadata
+        mean_tuple = metadata[i][11]
+        variance_tuple = metadata[i][12]
+        
+        #converting the tuples to tensors
+        mean_tensor = torch.tensor(mean_tuple).view(3,1,1)
+        std_tensor = torch.sqrt(torch.tensor(variance_tuple)).view(3,1,1)
+        
+        image = image_to_tensor(image)
+        image = (image - mean_tensor)/std_tensor
+        norm_images.append(image)
+        
     norm_images = torch.stack(norm_images)         
     return norm_images, sirna_ids, metadata
 
