@@ -447,9 +447,7 @@ def dino_test_collate(batch):
     normalizing using ImageNet values of mean and standard deviation.
     A little bit of code is repeated here for the sake of testing.
     """
-    image_to_tensor = transforms.Compose([
-        transforms.ToImage(), 
-        transforms.ToDtype(torch.float),
+    crop = transforms.Compose([
         transforms.CenterCrop(224)
         ])
     images, sirna_ids, metadata = zip(*batch)
@@ -457,9 +455,9 @@ def dino_test_collate(batch):
     std = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
     norm_images = []
     for i, image in enumerate(images):
-        variance = metadata[i][12]
-        image = image_to_tensor(image)
-        image = (image - mean)/std
+        image = image.float() / 255.0 #convert to 0-1 range
+        image = (image - mean)/std # shift using ImageNet mean and std
+        image = crop(image) # center crop according to ViT standard input
         norm_images.append(image)
     norm_images = torch.stack(norm_images)         
     return norm_images, sirna_ids, metadata
