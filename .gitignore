@@ -17,3 +17,7 @@ wandb
 #train configuration folder
 config/train/*
 config/slurm/*
+
+dino/wandb/*
+dino/__pycache__/*
+dino/.vscode/*
