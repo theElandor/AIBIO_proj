@@ -480,15 +480,17 @@ def dino_test_collate(batch):
         transforms.CenterCrop(224)
         ])
     images, sirna_ids, metadata = zip(*batch)
-    mean_tuple = eval(metadata[i][11])
-    variance_tuple = eval(metadata[i][12])
-    
-    #converting the tuples to tensors
-    mean_tensor = (torch.tensor(mean_tuple).view(3,1,1))/255.0
-    std_tensor = (torch.sqrt(torch.tensor(variance_tuple)).view(3,1,1))/255.0
     
     norm_images = []
     for i, image in enumerate(images):
+        
+        mean_tuple = eval(metadata[i][11])
+        variance_tuple = eval(metadata[i][12])
+        
+        #converting the tuples to tensors
+        mean_tensor = (torch.tensor(mean_tuple).view(3,1,1))/255.0
+        std_tensor = (torch.sqrt(torch.tensor(variance_tuple)).view(3,1,1))/255.0
+
         image = image.float() / 255.0 #convert to 0-1 range
         image = (image - mean_tensor)/std_tensor # shift using ImageNet mean and std
         image = crop(image) # center crop according to ViT standard input
