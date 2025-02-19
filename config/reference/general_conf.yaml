@@ -13,6 +13,7 @@ net: simclr # choose among [simclr, simclr34_norm, simclr50_norm, simclr50_v2, f
 checkpoint_dir: ~
 dataset_dir: /work/ai4bio2024/rxrx1
 load_checkpoint: ~
+metadata_path: /work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv
 
 # TRAINING OPTIONS
 epochs: 20
