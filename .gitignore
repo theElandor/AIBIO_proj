@@ -14,6 +14,12 @@ debug.ipynb
 #wandb
 wandb
 
+# dino stuff
+dino/wandb/*
+dino/__pycache__/*
+dino/.vscode/*
+
+
 #train configuration folder
 config/train/*
 config/slurm/*
