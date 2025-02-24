@@ -8,7 +8,7 @@ import torch, wandb
 import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Any
 import yaml, random
 from pathlib import Path
 import math
@@ -248,6 +248,8 @@ def config_loader(config):
         collate = dino_test_collate
     elif config['collate_fun'] == 'channelnorm_collate':
         collate = channelnorm_collate
+    elif config['collate_fun'] == 'tuple_channelnorm_collate':
+        collate = tuple_channelnorm_collate
 
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
@@ -468,6 +470,42 @@ def channelnorm_collate(batch):
     norm_images = torch.stack(norm_images)         
     return norm_images, sirna_ids, metadata
 
+def tuple_channelnorm_collate(batch)-> Tuple[torch.Tensor, Tuple[Tuple[int,int], ...], Tuple[Tuple[List[Any], List[Any]], ...]]:
+    '''
+    Collate function that performs channel-wise normalization
+    '''
+    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])    
+    images, sirna_ids, metadata = zip(*batch) 
+
+    #images, sirna_ids, metadata are tuples of tuples of shape:
+    #images --> tuple of len BATCH_SIZE, with tuples of len 2 inside, consisting in two images(tensors)
+    #sirna_ids --> tuple of len BATCH_SIZE, with tuples of len 2 inside, consisting in two integers
+    #metadata --> tuple of len BATCH_SIZE, with tuples of len 2 inside, with two lists containing the metadata (len = 13)
+    #recap!
+    #images--> tuple(tuple(tensor))   sirna_ids --> tuple(tuple(int))   metadata --> tuple(tuple(list(whatever types are inside the metadata)))
+
+    all_images = [] #list of all the already stacked couple of images
+    for i, image_tuple in enumerate(images):
+        image_tuple_list = []
+        for j , image in enumerate(image_tuple):
+            #getting the mean/var tuples out of the metadata
+            mean_tuple = eval(metadata[i][j][11])
+            variance_tuple = eval(metadata[i][j][12])
+
+            #converting the tuples to tensors
+            mean_tensor = torch.tensor(mean_tuple).view(3,1,1)
+            std_tensor = torch.sqrt(torch.tensor(variance_tuple)).view(3,1,1)
+            image:torch.Tensor = image_to_tensor(image)
+            image = (image - mean_tensor)/std_tensor
+            image_tuple_list.append(image)
+        #stacking the two corresponding images and adding them to the list
+        all_images.append(torch.stack(image_tuple_list,dim=0))
+    all_images = torch.stack(all_images,dim=0)         
+    
+    #final shape: [BATCH_SIZE , 2 (THE NUMBER OF CORRESPONDING IMAGES), 3 (CHANNELS) , HEIGHT , WIDTH]
+    #EX: torch.Size([32, 2, 3, 256, 256])
+    return all_images, sirna_ids, metadata 
+
 def dino_test_collate(batch):
     """
     Transformations used for dino training that must be used also 
@@ -550,6 +588,5 @@ def initialize_weights(module):
     
     for submodule in module.children():
         initialize_weights(submodule)
-
 
 
