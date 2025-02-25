@@ -459,13 +459,13 @@ def channelnorm_collate(batch):
         
         #converting the tuples to tensors
         mean_tensor = torch.tensor(mean_tuple).view(3,1,1)
-        std_tensor = torch.sqrt(torch.tensor(variance_tuple)).view(3,1,1)
+        std_tensor = torch.sqrt(torch.tensor(variance_tuple).view(3,1,1))
         
         image = image_to_tensor(image)
         image = (image - mean_tensor)/std_tensor
         norm_images.append(image)
         
-    norm_images = torch.stack(norm_images)         
+    norm_images = torch.stack(norm_images)
     return norm_images, sirna_ids, metadata
 
 def dino_test_collate(batch):
