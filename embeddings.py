@@ -1,4 +1,4 @@
-from source.utils import *
+from source.utils import load_net, load_weights, dino_test_collate
 import torch
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -6,20 +6,19 @@ from source.dataset import Rxrx1
 from torch.utils.data import Subset
 import torchvision.transforms.v2 as transforms
 from torch.utils.data import DataLoader
-from sklearn.decomposition import PCA
+#from sklearn.decomposition import PCA
 import seaborn as sb
+import umap
 
 BS = 64
 net = load_net("vit_small")
 assert torch.cuda.is_available(), "Notebook is not configured properly!"
 device = "cuda:0"
-checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino_small_testing_norm/checkpoint0030.pth"
+checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino_backbone/checkpoint0058.pth"
 load_weights(checkpoint, net, device)
-dataset = Rxrx1("/work/ai4bio2024/rxrx1",'metadata_plate_norm_3c.csv')
+dataset = Rxrx1("/work/ai4bio2024/rxrx1", metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv")
 metadata = dataset.get_metadata()
 train_indices = metadata.index[metadata.iloc[:, 3] == 'train'].tolist()
-val_indices = metadata.index[metadata.iloc[:, 3] == 'val'].tolist()
-test_indices = metadata.index[metadata.iloc[:, 3] == 'test'].tolist()
 train_dataset = Subset(dataset, train_indices)
 
 
@@ -33,7 +32,7 @@ n = len(train_dataloader)
 net.to(device)
 with net.eval() and torch.no_grad():
     for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):
-        if i == 20: # 20 minibatches
+        if i == 40: # 20 minibatches
             break
         print(f"{i}/{n}", flush=True)
         embeddings.append(net(x_batch.to(device)))
@@ -44,9 +43,11 @@ with net.eval() and torch.no_grad():
     embs = torch.cat(embeddings, dim=0)
     print(embs.shape)    
     x = embs.detach().cpu().numpy()
-    pca = PCA(n_components=2)
-    x_reduced = pca.fit_transform(x)
-    print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
+    # pca = PCA(n_components=2)
+    # x_reduced = pca.fit_transform(x)
+    reducer = umap.UMAP()
+    x_reduced = reducer.fit_transform(x)
+    #print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
     data = pd.DataFrame({
         "f1": x_reduced[:, 0],  # First column from the tensor
         "f2": x_reduced[:, 1],  # Second column from the tensor
@@ -54,6 +55,7 @@ with net.eval() and torch.no_grad():
         "E": experiments,
         "P": plates,
     })
-
-    sb.scatterplot(data=data, x="f1", y="f2", hue="E", alpha=.5, s=20)
-    plt.savefig("Experiment_groups.png")
+    #HEPG2 = data[data["CT"] == "HEPG2"]
+    sb.scatterplot(data=data, x="f1", y="f2", hue="CT", s=20, palette="bright")
+    plt.savefig("embeddings.png")
+    print("Done")
