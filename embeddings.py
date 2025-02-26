@@ -14,7 +14,7 @@ BS = 64
 net = load_net("vit_small")
 assert torch.cuda.is_available(), "Notebook is not configured properly!"
 device = "cuda:0"
-checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino_backbone/checkpoint0058.pth"
+checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/cross_batch_1/checkpoint0030.pth"
 load_weights(checkpoint, net, device)
 dataset = Rxrx1("/work/ai4bio2024/rxrx1", metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv")
 metadata = dataset.get_metadata()
