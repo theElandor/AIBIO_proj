@@ -159,7 +159,10 @@ def train_dino(args):
         args.local_crops_scale,
         args.local_crops_number,
     )
-    dataset = Rxrx1(args.data_path, metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv", transforms_=transform)
+    dataset = Rxrx1(args.data_path, 
+                    metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv",
+                    mode='tuple',
+                    transforms_=transform)
     metadata = dataset.get_metadata()
     train_indices = metadata.index[metadata.iloc[:, 3] == 'train'].tolist()
     train_dataset = Subset(dataset, train_indices)
@@ -325,7 +328,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
                     fp16_scaler, args):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
-    for it, (images, _,metadata) in enumerate(metric_logger.log_every(data_loader, 10, header)):
+    for it, (images, _,_) in enumerate(metric_logger.log_every(data_loader, 10, header)):
         # update weight decay and learning rate according to their schedule
         it = len(data_loader) * epoch + it  # global training iteration
         for i, param_group in enumerate(optimizer.param_groups):
@@ -478,13 +481,14 @@ class DataAugmentationDINO(object):
 #            normalize,
         ])
 
-    def __call__(self, image):
+    def __call__(self, images):
         crops = []
-        crops.append(self.global_transfo1(image))
-        crops.append(self.global_transfo2(image))
+        image_1, image_2 = images
+        crops.append(self.global_transfo1(image_1))
+        crops.append(self.global_transfo2(image_1))
         for _ in range(self.local_crops_number):
-            crops.append(self.local_transfo(image))
-        return crops
+            crops.append(self.local_transfo(image_2))
+        return crops, len(crops)-self.local_crops_number, self.local_crops_number
 
 
 if __name__ == '__main__':

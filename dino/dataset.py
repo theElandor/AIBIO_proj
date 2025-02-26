@@ -33,7 +33,7 @@ class Rxrx1(Dataset):
         __len__(): Returns the total number of items in the dataset.
     """
 
-    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, transforms_=None):
+    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None,mode:str = 'default',transforms_=None):
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
                                Not both!!!')
@@ -53,32 +53,84 @@ class Rxrx1(Dataset):
             self.metadata = dataframe.copy(deep=True)
         self.items = [(os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' +
                        str(item.site) + '.png'), item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)]
+        
+        #behaviour definition
+        if mode == 'default':
+            raise RuntimeError("For now, only tuple mode is supported for DINO. Please use tuple mode.")
+            self.behaviour = DefaultDatasetBehaviour(self)
+        elif mode == 'tuple':
+            self.behaviour = TupleDatasetBehaviour(self)
+        else:
+            raise RuntimeError(f"Invalid mode: {mode}. Expected 'default' or 'tuple'.")
         self.transforms_ = transforms_
         
     def __getitem__(self, index):
-        img_path, sirna_id, metadata = self.items[index]
-        image = read_image(img_path)
-        if self.transforms_:
-            mean_tuple = eval(metadata[11])
-            variance_tuple = eval(metadata[12])
-            
-            mean_tensor = (torch.tensor(mean_tuple))/255.0
-            std_tensor = (torch.sqrt(torch.tensor(variance_tuple)))/255.0
+        images, sirna_ids, metadatas = self.behaviour(index)
+        
+        mean_tuple_1, variance_tuple_1 = eval(metadatas[0][11]), eval(metadatas[0][12])
+        mean_tuple_2, variance_tuple_2 = eval(metadatas[1][11]), eval(metadatas[1][12])
+        
+        mean_tensor_1, std_tensor_1 = (torch.tensor(mean_tuple_1))/255.0, (torch.sqrt(torch.tensor(variance_tuple_1)))/255.0
+        mean_tensor_2, std_tensor_2 = (torch.tensor(mean_tuple_2))/255.0, (torch.sqrt(torch.tensor(variance_tuple_2)))/255.0
 
-            normalize = transforms.Compose([
-                        transforms.ToTensor(),
-                        transforms.Normalize(mean_tensor, std_tensor),
-                    ])
-            image = to_pil_image(image)
-            views = self.transforms_(image)
-            for i in range(len(views)):
-                views[i] = normalize(views[i])
-        return (views, sirna_id, metadata)
+        normalize_1 = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean_tensor_1, std_tensor_1),
+                ])
+        normalize_2 = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean_tensor_2, std_tensor_2),
+                ])
+
+        image_1, image_2 = images
+        images = (to_pil_image(image_1), to_pil_image(image_2))
+        views, global_crops_number, local_crops_number = self.transforms_(images)
+        for i in range(global_crops_number):
+            views[i] = normalize_1(views[i])
+        for i in range(local_crops_number):
+            views[i+global_crops_number] = normalize_2(views[i+global_crops_number])
+
+        return (views, sirna_ids, metadatas)
+        
 
     def __len__(self):
         return len(self.items)
     
     def get_metadata(self):
         return self.metadata
+
+class DefaultDatasetBehaviour:
+    def __init__(self,dataset:Rxrx1):
+        self.dataset = dataset
+
+    def __call__(self,index:int):
+        img_path, sirna_id, metadata = self.dataset.items[index]
+        return (read_image(img_path), sirna_id, metadata)
     
-    
+class TupleDatasetBehaviour:
+    def __init__(self,dataset:Rxrx1):
+        self.dataset = dataset
+
+    def __call__(self,index:int):
+        #getting the whole dataframe
+        df = self.dataset.get_metadata()
+        
+        #getting one random sample
+        img_path_1, sirna_id_1, metadata_1 = self.dataset.items[index]
+        experiment_1 = metadata_1[4]
+
+        #extracting metadata for the new sample
+        df_filtered = df[(df['sirna_id'] == sirna_id_1) & (df['experiment'] != experiment_1)]
+
+        #sampling a random sample that respects our constraints
+        if not df_filtered.empty:
+            random_index = df_filtered.sample(n=1).index[0]
+        else:
+            raise RuntimeError("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy")
+        
+        img_path_2, sirna_id_2, metadata_2 = self.dataset.items[random_index]
+
+        images = (read_image(img_path_1),read_image(img_path_2))
+        sirna_ids = (sirna_id_1,sirna_id_2)
+        metadatas = (metadata_1,metadata_2) 
+        return (images, sirna_ids,metadatas)
