@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from source.utils import load_net, load_weights, dino_test_collate
 import torch
 import matplotlib.pyplot as plt
@@ -55,7 +58,7 @@ with net.eval() and torch.no_grad():
         "E": experiments,
         "P": plates,
     })
-    #HEPG2 = data[data["CT"] == "HEPG2"]
-    sb.scatterplot(data=data, x="f1", y="f2", hue="CT", s=20, palette="bright")
+    HUVEC = data[data["CT"] == "HUVEC"]
+    sb.scatterplot(data=HUVEC, x="f1", y="f2", hue="E", s=20, palette="bright")
     plt.savefig("embeddings.png")
     print("Done")

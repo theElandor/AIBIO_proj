@@ -159,14 +159,14 @@ def train_dino(args):
         args.local_crops_scale,
         args.local_crops_number,
     )
-    dataset = Rxrx1(args.data_path, 
-                    metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv",
+    dataset = Rxrx1(args.data_path,
+                    metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_1c_exp_strat.csv",
                     mode='tuple',
                     transforms_=transform)
     metadata = dataset.get_metadata()
     train_indices = metadata.index[metadata.iloc[:, 3] == 'train'].tolist()
     train_dataset = Subset(dataset, train_indices)
-    
+
     sampler = torch.utils.data.DistributedSampler(train_dataset, shuffle=True)
     data_loader = torch.utils.data.DataLoader(
         train_dataset,
