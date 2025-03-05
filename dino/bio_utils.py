@@ -353,3 +353,23 @@ def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Mod
     out_feat = net.forward(x_batch.to(device))
     loss = loss_func(out_feat, device)
     return loss
+
+def load_dino_weights(model, pretrained_weights, checkpoint_key="student"):
+    """
+    Function to load dino-vit weights. Taken from https://github.com/facebookresearch/dino/blob/main/utils.py
+    """
+    if os.path.isfile(pretrained_weights):
+        state_dict = torch.load(pretrained_weights, map_location="cpu")
+        if checkpoint_key is not None and checkpoint_key in state_dict:
+            print(f"Take key {checkpoint_key} in provided checkpoint dict")
+            state_dict = state_dict[checkpoint_key]
+        # remove `module.` prefix
+        state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        # remove `backbone.` prefix induced by multicrop wrapper
+        state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
+        msg = model.load_state_dict(state_dict, strict=False)
+        print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
+    else:
+        print("Please provide a valid file.")
+        return None
+    return state_dict

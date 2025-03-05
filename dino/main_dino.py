@@ -23,6 +23,7 @@ from dataset import Rxrx1
 from hubconf import dino_vitb16
 from torchvision.models import ViT_B_16_Weights
 from torch.utils.data import Subset
+from bio_utils import load_dino_weights
 
 
 import numpy as np
@@ -41,7 +42,7 @@ import vision_transformer as vits
 from vision_transformer import DINOHead
 
 def init_wandb(dino_config):
-    assert wandb.api.api_key, "the api key has not been set!\n"
+    #assert wandb.Api().api_key, "the api key has not been set!\n"
     # print(f"wandb key: {wandb.api.api_key}")
     wandb.login(verify=True)
     wandb.init(
@@ -119,7 +120,7 @@ def get_args_parser():
     parser.add_argument('--optimizer', default='adamw', type=str,
         choices=['adamw', 'sgd', 'lars'], help="""Type of optimizer. We recommend using adamw with ViTs.""")
     parser.add_argument('--drop_path_rate', type=float, default=0.1, help="stochastic depth rate")
-
+    
     # Multi-crop parameters
     parser.add_argument('--global_crops_scale', type=float, nargs='+', default=(0.4, 1.),
         help="""Scale range of the cropped image before resizing, relatively to the origin image.
@@ -142,6 +143,11 @@ def get_args_parser():
     parser.add_argument("--dist_url", default="env://", type=str, help="""url used to set up
         distributed training; see https://pytorch.org/docs/stable/distributed.html""")
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
+
+    # ================== custom options ==============
+    parser.add_argument("--load_pretrained", default=None, type=str, help="Specify weights paths to load them.")
+    parser.add_argument("--multi_centering", default=False, type=utils.bool_flag, help="Whether to use multiple centers.")
+
     return parser
 
 
@@ -149,7 +155,7 @@ def train_dino(args):
     utils.init_distributed_mode(args)
     utils.fix_random_seeds(args.seed)
     print("git:\n  {}\n".format(utils.get_sha()))
-    print("\n".join("%s: %s" % (k, str(v)) for k, v in sorted(dict(vars(args)).items())))    
+    print("\n".join("%s: %s" % (k, str(v)) for k, v in sorted(dict(vars(args)).items())))
     init_wandb(dict(vars(args)))
     cudnn.benchmark = True
 
@@ -160,7 +166,7 @@ def train_dino(args):
         args.local_crops_number,
     )
     dataset = Rxrx1(args.data_path,
-                    metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_1c_exp_strat.csv",
+                    metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv",
                     mode='tuple',
                     transforms_=transform)
     metadata = dataset.get_metadata()
@@ -202,7 +208,10 @@ def train_dino(args):
         embed_dim = student.fc.weight.shape[1]
     else:
         print(f"Unknow architecture: {args.arch}")
-
+    # ============ custom weights loading ============
+    if args.load_pretrained is not None:
+        load_dino_weights(student, args.load_pretrained)
+    #=================================================
     # multi-crop wrapper handles forward with inputs of different resolutions
     student = utils.MultiCropWrapper(student, DINOHead(
         embed_dim,
@@ -243,6 +252,7 @@ def train_dino(args):
         args.teacher_temp,
         args.warmup_teacher_temp_epochs,
         args.epochs,
+        args.multi_centering
     ).cuda()
 
     # ============ preparing optimizer ... ============
@@ -328,8 +338,17 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
                     fp16_scaler, args):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
-    for it, (images, _,_) in enumerate(metric_logger.log_every(data_loader, 10, header)):
+    for it, (images, _,metadata) in enumerate(metric_logger.log_every(data_loader, 10, header)):
         # update weight decay and learning rate according to their schedule
+        # ============ TUPLE MODE explanation ==========
+        # when the dataset is in tuple mode, the first two views
+        # in images are the global views, coming from image A in batch (experiment) X and treatment C.
+        # The last 8 images are the local views, coming from image B in batch (experiment) Y and treatment C.
+        # metadata[0] and metadata[1] are the metadata of the first and the second image respectively.
+        # This tecnique is called Cross Batch (CB) learning.
+        # When in default mode, the 10 images are coming from the same image A.
+        # This means that the metadata should only have 1 element.
+        #==============================================
         it = len(data_loader) * epoch + it  # global training iteration
         for i, param_group in enumerate(optimizer.param_groups):
             param_group["lr"] = lr_schedule[it]
@@ -342,7 +361,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
         with torch.cuda.amp.autocast(fp16_scaler is not None):
             teacher_output = teacher(images[:2])  # only the 2 global views pass through the teacher
             student_output = student(images)
-            loss = dino_loss(student_output, teacher_output, epoch)
+            loss = dino_loss(student_output, teacher_output, epoch, metadata)
             wandb.log({"train_loss":loss.item()})
 
         if not math.isfinite(loss.item()):
@@ -388,13 +407,21 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
 
 class DINOLoss(nn.Module):
     def __init__(self, out_dim, ncrops, warmup_teacher_temp, teacher_temp,
-                 warmup_teacher_temp_epochs, nepochs, student_temp=0.1,
+                 warmup_teacher_temp_epochs, nepochs,multi_centering,student_temp=0.1,
                  center_momentum=0.9):
         super().__init__()
         self.student_temp = student_temp
         self.center_momentum = center_momentum
         self.ncrops = ncrops
-        self.register_buffer("center", torch.zeros(1, out_dim))
+        self.multi_centering = multi_centering
+        # since experiments index start from 1 in each different cell_type, we
+        # need to add offsets to have an indexing from 1 to 51, so that
+        # each experiment is matched to the coresponding center (self.center[index-1])
+        self.offsets = {"HUVEC":0, "U2OS": 24, "RPE":29, "HEPG2":40}
+        # ============= centering procedure =============
+        centers_number = 1 if not multi_centering else 51
+        self.register_buffer(f"center", torch.zeros(centers_number, out_dim))
+        # ============ temperature setup ================
         # we apply a warm up for the teacher temperature because
         # a too high temperature makes the training instable at the beginning
         self.teacher_temp_schedule = np.concatenate((
@@ -403,16 +430,24 @@ class DINOLoss(nn.Module):
             np.ones(nepochs - warmup_teacher_temp_epochs) * teacher_temp
         ))
 
-    def forward(self, student_output, teacher_output, epoch):
+    def forward(self, student_output, teacher_output, epoch, metadata):
         """
         Cross-entropy between softmax outputs of the teacher and student networks.
         """
+        targets = None
         student_out = student_output / self.student_temp
-        student_out = student_out.chunk(self.ncrops)
-
+        student_out = student_out.chunk(self.ncrops)    
+        # ============= custom centering procedure =============
+        if self.multi_centering:
+            targets = [int(x.split("-")[1])+self.offsets[x.split("-")[0]]-1 for x in metadata[0][4]]
+            # targets is a list that can contain elements in range [0,50]
+            teacher_centers = self.center[targets]
+            temp_centers = torch.cat((teacher_centers, teacher_centers), dim=0)
+        final_center = self.center if not self.multi_centering else temp_centers
+        # =====================================================
         # teacher centering and sharpening
         temp = self.teacher_temp_schedule[epoch]
-        teacher_out = F.softmax((teacher_output - self.center) / temp, dim=-1)
+        teacher_out = F.softmax((teacher_output - final_center) / temp, dim=-1)
         teacher_out = teacher_out.detach().chunk(2)
 
         total_loss = 0
@@ -426,19 +461,31 @@ class DINOLoss(nn.Module):
                 total_loss += loss.mean()
                 n_loss_terms += 1
         total_loss /= n_loss_terms
-        self.update_center(teacher_output)
+        self.update_center(teacher_output, targets)
         return total_loss
 
     @torch.no_grad()
-    def update_center(self, teacher_output):
+    def update_center(self, teacher_output, targets=None):
         """
         Update center used for teacher output.
         """
-        batch_center = torch.sum(teacher_output, dim=0, keepdim=True)
-        dist.all_reduce(batch_center)
-        batch_center = batch_center / (len(teacher_output) * dist.get_world_size())
-
-        # ema update
+        if self.multi_centering:
+            BS = teacher_output.shape[0]//2
+            batch_center = torch.zeros_like(self.center)
+            # compute batch center (1 per experiment)
+            for i, t in enumerate(targets):
+                temp = torch.add(teacher_output[i], teacher_output[i+BS])
+                batch_center[t] = torch.add(batch_center[t], temp)
+            dist.all_reduce(batch_center)
+            # fix batch center
+            samples_per_exp = torch.bincount(torch.tensor(targets), minlength=51).float().to(batch_center.device)
+            samples_per_exp[samples_per_exp == 0] = 1
+            batch_center = batch_center / (samples_per_exp.view(-1,1) * dist.get_world_size())
+        else:
+            batch_center = torch.sum(teacher_output, dim=0, keepdim=True)
+            dist.all_reduce(batch_center)
+            batch_center = batch_center / (len(teacher_output) * dist.get_world_size())
+        #EMA update (same for both cases)
         self.center = self.center * self.center_momentum + batch_center * (1 - self.center_momentum)
 
 
