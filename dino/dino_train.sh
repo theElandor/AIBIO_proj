@@ -1,12 +1,14 @@
 #!/bin/bash
-#SBATCH -e /homes/mlugli/output/err_3.txt
-#SBATCH -o /homes/mlugli/output/out_3.txt
-#SBATCH --job-name=backbone_dino
+#SBATCH -e /homes/mlugli/output/out2.txt
+#SBATCH -o /homes/mlugli/output/err2.txt
+#SBATCH --job-name=pretrained_full_backbone
 #SBATCH --account=ai4bio2024
 #SBATCH --partition=all_usr_prod
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=12
-#SBATCH --gres=gpu:1
-#SBATCH --mem=200G
+#SBATCH --mem=50G
 #SBATCH --time=24:00:00
-python3 /homes/mlugli/AIBIO_proj/dino/main_dino.py --arch vit_small --saveckp_freq 2 --data_path /work/ai4bio2024/rxrx1 --output_dir /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/cross_batch_reduced
+#SBATCH --gres=gpu:1 --constraint="gpu_RTX6000_24G|gpu_RTXA5000_24G|gpu_A40_48G"
+
+source activate dinoenv
+python3 /homes/mlugli/AIBIO_proj/dino/main_dino.py --multi_centering True --arch vit_small --saveckp_freq 5 --data_path /work/ai4bio2024/rxrx1 --output_dir /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/custom_centering_1 --load_pretrained /work/h2020deciderficarra_shared/rxrx1/checkpoints/OFFICIAL_ViT_pretrained/dino_deitsmall16_pretrain.pth
