@@ -440,7 +440,7 @@ class DINOLoss(nn.Module):
         # ============= custom centering procedure =============
         if self.multi_centering:
             targets = [int(x.split("-")[1])+self.offsets[x.split("-")[0]]-1 for x in metadata[0][4]]
-            # targets is a list that can contain elements in range [0,50]
+            # targets is a list that can contain elements in range [0,50], since we have 51 experiments
             teacher_centers = self.center[targets]
             temp_centers = torch.cat((teacher_centers, teacher_centers), dim=0)
         final_center = self.center if not self.multi_centering else temp_centers
@@ -474,8 +474,8 @@ class DINOLoss(nn.Module):
             batch_center = torch.zeros_like(self.center)
             # compute batch center (1 per experiment)
             for i, t in enumerate(targets):
-                temp = torch.add(teacher_output[i], teacher_output[i+BS])
-                batch_center[t] = torch.add(batch_center[t], temp)
+                torch.add(batch_center[t], teacher_output[i])
+                torch.add(batch_center[t], teacher_output[i+BS])
             dist.all_reduce(batch_center)
             # fix batch center
             samples_per_exp = torch.bincount(torch.tensor(targets), minlength=51).float().to(batch_center.device)
