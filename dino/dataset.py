@@ -34,6 +34,7 @@ class Rxrx1(Dataset):
     """
 
     def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None,mode:str = 'default',transforms_=None):
+        self.metadata_path = metadata_path
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
                                Not both!!!')

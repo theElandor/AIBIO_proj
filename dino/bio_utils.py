@@ -2,6 +2,7 @@ import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torchvision.transforms.v2 as transforms
+import pandas as pd
 from prettytable import PrettyTable
 from wilds import get_dataset
 import torch, wandb
@@ -373,3 +374,46 @@ def load_dino_weights(model, pretrained_weights, checkpoint_key="student"):
         print("Please provide a valid file.")
         return None
     return state_dict
+
+
+def get_samples_per_domain(metadata_path):
+	"""
+	Computes the number of samples per domain in the dataset.
+	We use hardcoded offsets because we want X-01 and Y-01 to have different indices,
+	where X and Y are different cell types.
+	Args:
+		metadata_path: path to the metadata file.
+	Returns:
+		spd: a 3xN matrix where N is the number of domains in the dataset. 
+			
+	"""
+	print("Computing samples per domain...")
+	dataset = pd.read_csv(metadata_path)
+	n_of_domains = len(dataset['experiment'].unique())	
+	train = dataset[dataset['dataset'] == 'train']
+	test = dataset[dataset['dataset'] == 'test']
+	val = dataset[dataset['dataset'] == 'val']
+	print(f"Train set: found {len(train)} images")
+	print(f"Test set: found {len(test)} images")
+	print(f"Validation set: found {len(val)} images")
+	offsets = {"HUVEC":0, "U2OS": 24, "RPE":29, "HEPG2":40}
+	spd = np.zeros((3, n_of_domains))
+	for s,split in enumerate([train, val, test]):
+		vals = split['experiment'].value_counts()
+		for domain in vals.index:			
+			cell_type, experiment = domain.split("-")
+			final_index = offsets[cell_type] + int(experiment) - 1
+			spd[s, final_index] = vals[domain]
+	return spd
+
+def get_batch_domains(metadata):
+	"""
+	Computes the domain indices for each sample belonging to the batch.
+	Args:
+		metadata: metadata returned by the dataloader.
+	Returns:
+		batch_domains: a list of domain indices for each sample in the batch.
+	"""
+	offsets = {"HUVEC":0, "U2OS": 24, "RPE":29, "HEPG2":40}
+	batch_domains = [int(x.split("-")[1])+offsets[x.split("-")[0]]-1 for x in metadata[0][4]]
+	return batch_domains
