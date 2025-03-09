@@ -17,9 +17,12 @@ BS = 64
 net = load_net("vit_small")
 assert torch.cuda.is_available(), "Notebook is not configured properly!"
 device = "cuda:0"
-checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/cross_batch_1/checkpoint0030.pth"
+#checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/cross_batch_1/checkpoint0030.pth"
+#checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/custom_centering_1/checkpoint0075.pth"
+checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/custom_centering_2/checkpoint0095.pth"
 load_weights(checkpoint, net, device)
-dataset = Rxrx1("/work/ai4bio2024/rxrx1", metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv")
+#dataset = Rxrx1("/work/ai4bio2024/rxrx1", metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv")
+dataset = Rxrx1("/work/ai4bio2024/rxrx1", metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_1c_exp_strat.csv")
 metadata = dataset.get_metadata()
 train_indices = metadata.index[metadata.iloc[:, 3] == 'train'].tolist()
 train_dataset = Subset(dataset, train_indices)
@@ -58,7 +61,7 @@ with net.eval() and torch.no_grad():
         "E": experiments,
         "P": plates,
     })
-    HUVEC = data[data["CT"] == "HUVEC"]
-    sb.scatterplot(data=HUVEC, x="f1", y="f2", hue="E", s=20, palette="bright")
-    plt.savefig("embeddings.png")
+    #HUVEC = data[data["CT"] == "HUVEC"]
+    sb.scatterplot(data=data, x="f1", y="f2", hue="E", s=20, palette="bright")
+    plt.savefig("output.png")
     print("Done")

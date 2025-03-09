@@ -167,7 +167,7 @@ def train_dino(args):
         args.local_crops_number,
     )
     dataset = Rxrx1(args.data_path,
-                    metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv",
+                    metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_1c_exp_strat.csv",
                     mode='tuple',
                     transforms_=transform)
     metadata = dataset.get_metadata()
