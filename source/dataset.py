@@ -1,10 +1,11 @@
 import os, sys, torch
-from torchvision.io import read_image
+from torchvision.io import decode_image
+from torchvision.utils import save_image
 # from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import Dataset
 import pandas as pd
-
-
+                
+    
 class Rxrx1(Dataset):
     
     """
@@ -47,7 +48,7 @@ class Rxrx1(Dataset):
         if root_dir is None:
             raise RuntimeError('Rxrx1 dataset needs to be explicitly initialized with a root_dir')
             
-        self.root_dir = os.path.join(root_dir, "rxrx1_v1.0")
+        self.root_dir = root_dir
         if not os.path.exists(self.root_dir):
             raise RuntimeError(f'Rxrx1 dataset was initialized with a non-existing root_dir: {self.root_dir}')
         self.imgs_dir = os.path.join(self.root_dir, "images")
@@ -55,17 +56,41 @@ class Rxrx1(Dataset):
             self.metadata = pd.read_csv(metadata_path)
         else:   
             self.metadata = dataframe.copy(deep=True)
-        self.items = [(os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' +
-                       str(item.site) + '.png'), item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)]
         
-        #behaviour definition
-        if mode == 'default':
-            self.behaviour = DefaultDatasetBehaviour(self)
-        elif mode == 'tuple':
-            self.behaviour = TupleDatasetBehaviour(self)
+        #this part changes between different dataset directories
+        if root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v1.0':
+            self.items = [(os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' +
+                        str(item.site) + '.png'), item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)]
+            
+            #behaviour definition
+            if mode == 'default':
+                self.behaviour = DefaultDatasetBehaviour(self)
+            elif mode == 'tuple':
+                self.behaviour = TupleDatasetBehaviour(self)
+            else:
+                raise RuntimeError(f"Invalid mode: {mode}. Expected 'default' or 'tuple'.")
+        #new dataset
+        elif root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v2.1':
+            self.items = [(os.path.join(self.imgs_dir, 
+                                        item.experiment, 
+                                        "Plate" + str(item.plate), 
+                                        item.well + '_s' + str(item.site) + '_p' + str(part) + '_c012.png'),
+                            os.path.join(self.imgs_dir, 
+                                        item.experiment, 
+                                        "Plate" + str(item.plate), 
+                                        item.well + '_s' + str(item.site) + '_p' + str(part) + '_c345.png'),
+                           item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)
+                           for part in range(1,6)
+                          ]
+            #behaviour definition
+            if mode == 'default':
+                self.behaviour = DefaultDatasetBehaviourV2(self)
+            elif mode == 'tuple':
+                self.behaviour = TupleDatasetBehaviourV2(self)
+            else:
+                raise RuntimeError(f"Invalid mode: {mode}. Expected 'default' or 'tuple'.")
         else:
-            raise RuntimeError(f"Invalid mode: {mode}. Expected 'default' or 'tuple'.")
-
+            raise RuntimeError('You provided an invalid dataset path')
     def __getitem__(self, index):
         imagedata_tuple = self.behaviour(index)
         return imagedata_tuple
@@ -83,7 +108,16 @@ class DefaultDatasetBehaviour:
 
     def __call__(self,index:int):
         img_path, sirna_id, metadata = self.dataset.items[index]
-        return (read_image(img_path), sirna_id, metadata)
+        return (decode_image(img_path), sirna_id, metadata)
+    
+class DefaultDatasetBehaviourV2: 
+    def __init__(self,dataset:Rxrx1):
+        self.dataset = dataset
+
+    def __call__(self,index:int):
+        img_path_012, img_path_345, sirna_id, metadata = self.dataset.items[index]
+        stacked_image = torch.cat((decode_image(img_path_012),decode_image(img_path_345)),dim=0)
+        return (stacked_image, sirna_id, metadata)
     
 class TupleDatasetBehaviour:
     def __init__(self,dataset:Rxrx1):
@@ -107,19 +141,38 @@ class TupleDatasetBehaviour:
             raise RuntimeError("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy")
         
         img_path_2, sirna_id_2, metadata_2 = self.dataset.items[random_index]
-
-        images = (read_image(img_path_1),read_image(img_path_2))
+        
+        images = (decode_image(img_path_1),decode_image(img_path_2))
         sirna_ids = (sirna_id_1,sirna_id_2)
         metadatas = (metadata_1,metadata_2) 
         return (images, sirna_ids,metadatas)
     
-from utils import tuple_channelnorm_collate
-if __name__ == '__main__':
-    dataset = Rxrx1(root_dir='/work/ai4bio2024/rxrx1',metadata_path='/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv',mode='tuple')
-    dataloader = torch.utils.data.DataLoader(dataset=dataset, collate_fn=tuple_channelnorm_collate,batch_size=32)
-    for item in dataloader:
-        print(type(item))
-        print(len(item))
-        print(type(item[2]))
-        print(item[2])
-        break
+class TupleDatasetBehaviourV2:
+    def __init__(self,dataset:Rxrx1):
+        self.dataset = dataset
+
+    def __call__(self,index:int):
+        #getting the whole dataframe
+        df = self.dataset.get_metadata()
+        
+        #getting one random sample
+        img_path_012_1, img_path_345_1, sirna_id_1, metadata_1 = self.dataset.items[index]
+        experiment_1 = metadata_1[4]
+
+        #extracting metadata for the new sample
+        df_filtered = df[(df['sirna_id'] == sirna_id_1) & (df['experiment'] != experiment_1)]
+
+        #sampling a random sample that respects our constraints
+        if not df_filtered.empty:
+            random_index = df_filtered.sample(n=1).index[0]
+        else:
+            raise RuntimeError("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy")
+        
+        img_path_012_2, img_path_345_2, sirna_id_2, metadata_2 = self.dataset.items[random_index]
+        stacked_image_1 = torch.cat((decode_image(img_path_012_1),decode_image(img_path_345_1)),dim=0)
+        stacked_image_2 = torch.cat((decode_image(img_path_012_2),decode_image(img_path_345_2)),dim=0)
+        images = (stacked_image_1,stacked_image_2)
+        sirna_ids = (sirna_id_1,sirna_id_2)
+        metadatas = (metadata_1,metadata_2) 
+        return (images, sirna_ids,metadatas)
+    
