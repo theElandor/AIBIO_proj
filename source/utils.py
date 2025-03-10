@@ -460,8 +460,8 @@ def channelnorm_collate(batch):
         variance_tuple = eval(metadata[i][12])
         
         #converting the tuples to tensors
-        mean_tensor = torch.tensor(mean_tuple).view(3,1,1)
-        std_tensor = torch.sqrt(torch.tensor(variance_tuple).view(3,1,1))
+        mean_tensor = torch.tensor(mean_tuple).view(len(mean_tuple),1,1)
+        std_tensor = torch.sqrt(torch.tensor(variance_tuple).view(len(mean_tuple),1,1))
         
         image = image_to_tensor(image)
         image = (image - mean_tensor)/std_tensor
@@ -493,8 +493,8 @@ def tuple_channelnorm_collate(batch)-> Tuple[torch.Tensor, Tuple[Tuple[int,int],
             variance_tuple = eval(metadata[i][j][12])
 
             #converting the tuples to tensors
-            mean_tensor = torch.tensor(mean_tuple).view(3,1,1)
-            std_tensor = torch.sqrt(torch.tensor(variance_tuple)).view(3,1,1)
+            mean_tensor = torch.tensor(mean_tuple).view(len(mean_tuple),1,1)
+            std_tensor = torch.sqrt(torch.tensor(variance_tuple)).view(len(mean_tuple),1,1)
             image:torch.Tensor = image_to_tensor(image)
             image = (image - mean_tensor)/std_tensor
             image_tuple_list.append(image)
