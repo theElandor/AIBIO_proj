@@ -35,7 +35,7 @@ import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torchvision import models as torchvision_models
-
+import pandas as pd
 import wandb
 import utils
 import vision_transformer as vits
@@ -136,7 +136,7 @@ def get_args_parser():
 
     # Misc
     parser.add_argument('--data_path', default='/path/to/imagenet/train/', type=str,
-        help='Please specify path to the ImageNet training data.')
+        help='Please specify path to the training data.')
     parser.add_argument('--output_dir', default=".", type=str, help='Path to save logs and checkpoints.')
     parser.add_argument('--saveckp_freq', default=20, type=int, help='Save checkpoint every x epochs.')
     parser.add_argument('--seed', default=0, type=int, help='Random seed.')
@@ -148,7 +148,9 @@ def get_args_parser():
     # ================== custom options ==============
     parser.add_argument("--load_pretrained", default=None, type=str, help="Specify weights paths to load them.")
     parser.add_argument("--multi_centering", default=False, type=utils.bool_flag, help="Whether to use multiple centers.")
-    parser.add_argument("--use_original_code", default=False, type=utils.bool_flag, help="Whether to use original code.")
+    parser.add_argument("--use_original_code", default=True, type=utils.bool_flag, help="Whether to use original code.")
+    parser.add_argument("--metadata_path", default=None, type=str, help="Path of the metadata to use.")
+    parser.add_argument("--cell_type", default=None, type=str, help="Cell type to use.")
     return parser
 
 
@@ -166,24 +168,27 @@ def train_dino(args):
         args.local_crops_scale,
         args.local_crops_number,
     )
+    
+    df = pd.read_csv(args.metadata_path)
+    df_train = df[df["dataset"] == "train"]
+    if args.cell_type is not None:
+        df_train = df_train[df_train["cell_type"] == args.cell_type]
+        
     dataset = Rxrx1(args.data_path,
-                    metadata_path="/work/h2020deciderficarra_shared/rxrx1/metadata/m_3c_experiment_strat.csv",
+                    dataframe=df_train,
                     mode='tuple',
-                    transforms_=transform)
-    metadata = dataset.get_metadata()
-    train_indices = metadata.index[metadata.iloc[:, 3] == 'train'].tolist()
-    train_dataset = Subset(dataset, train_indices)
+                    transforms_=transform)    
 
-    sampler = torch.utils.data.DistributedSampler(train_dataset, shuffle=True)
+    sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
     data_loader = torch.utils.data.DataLoader(
-        train_dataset,
+        dataset,
         sampler=sampler,
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=True,
     )
-    print(f"Data loaded: there are {len(train_dataset)} images.")
+    print(f"Data loaded: there are {len(dataset)} images.")
 
     # ============ building student and teacher networks ... ============
     # we changed the name DeiT-S for ViT-S to avoid confusions
@@ -246,11 +251,9 @@ def train_dino(args):
     print(f"Student and Teacher are built: they are both {args.arch} network.")
 
     # ============ preparing loss ... ============
-
+    examples_in_each_domain, mapping= get_samples_per_domain(args.metadata_path)
     if args.use_original_code:
-        examples_in_each_domain = get_samples_per_domain(dataset.metadata_path)
-        examples_in_each_domain_train = examples_in_each_domain[0]
-        number_of_domains = examples_in_each_domain.shape[1]
+        number_of_domains = examples_in_each_domain.shape[0]
         dino_loss = DINOLossMultiCenter(
             args.out_dim,
             True,
@@ -260,7 +263,7 @@ def train_dino(args):
             args.warmup_teacher_temp_epochs,
             args.epochs,
             num_domains=number_of_domains,
-            examples_in_each_domain=examples_in_each_domain_train,
+            examples_in_each_domain=examples_in_each_domain,
             device_id=args.gpu,
             only_cross_domain=False, # still need to understand what is this
         )
@@ -327,7 +330,7 @@ def train_dino(args):
         # ============ training one epoch of DINO ... ============
         train_stats = train_one_epoch(student, teacher, teacher_without_ddp, dino_loss,
             data_loader, optimizer, lr_schedule, wd_schedule, momentum_schedule,
-            epoch, fp16_scaler, args)
+            epoch, fp16_scaler, mapping, args)
 
         # ============ writing logs ... ============
         save_dict = {
@@ -355,7 +358,7 @@ def train_dino(args):
 
 def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loader,
                     optimizer, lr_schedule, wd_schedule, momentum_schedule,epoch,
-                    fp16_scaler, args):
+                    fp16_scaler, mapping, args):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
     for it, (images, _,metadata) in enumerate(metric_logger.log_every(data_loader, 10, header)):
@@ -385,8 +388,8 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             # the forward pass of the loss needs the indexes of the domains
             # found in the batch to compute the centering of the teacher output
             if args.use_original_code:
-                d1 = torch.tensor(get_batch_domains(metadata))
-                d2 = torch.tensor(get_batch_domains(metadata))
+                d1 = torch.tensor(get_batch_domains(metadata, mapping))
+                d2 = torch.tensor(get_batch_domains(metadata, mapping))
                 batch_domains = [d1,d2]
                 loss = dino_loss(student_output, teacher_output, epoch, batch_domains)
             # otherwise we just pass our own metadata and everything is done in the loss
@@ -436,6 +439,10 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
 
 
 class DINOLoss(nn.Module):
+    """Original dino loss with an attempt of making it work with multiple centers.
+    There is somehting wrong with the custom centering procedure, so it is not working properly.
+    Always use this loss with multi_centering = False
+    """
     def __init__(self, out_dim, ncrops, warmup_teacher_temp, teacher_temp,
                  warmup_teacher_temp_epochs, nepochs,multi_centering,student_temp=0.1,
                  center_momentum=0.9):
@@ -444,14 +451,11 @@ class DINOLoss(nn.Module):
         self.center_momentum = center_momentum
         self.ncrops = ncrops
         self.multi_centering = multi_centering
-        # since experiments index start from 1 in each different cell_type, we
-        # need to add offsets to have an indexing from 1 to 51, so that
-        # each experiment is matched to the coresponding center (self.center[index-1])
-        self.offsets = {"HUVEC":0, "U2OS": 24, "RPE":29, "HEPG2":40}
-        # ============= centering procedure =============
+        # ============= old (not working properly) custom centering ==============
+        self.offsets = {"HUVEC":0, "U2OS": 24, "RPE":29, "HEPG2":40}        
         centers_number = 1 if not multi_centering else 51
-        self.register_buffer(f"center", torch.zeros(centers_number, out_dim))
         # ============ temperature setup ================
+        self.register_buffer(f"center", torch.zeros(centers_number, out_dim))
         # we apply a warm up for the teacher temperature because
         # a too high temperature makes the training instable at the beginning
         self.teacher_temp_schedule = np.concatenate((
@@ -472,9 +476,9 @@ class DINOLoss(nn.Module):
             targets = [int(x.split("-")[1])+self.offsets[x.split("-")[0]]-1 for x in metadata[0][4]]
             # targets is a list that can contain elements in range [0,50], since we have 51 experiments
             teacher_centers = self.center[targets]
-            temp_centers = torch.cat((teacher_centers, teacher_centers), dim=0)
-        final_center = self.center if not self.multi_centering else temp_centers
+            temp_centers = torch.cat((teacher_centers, teacher_centers), dim=0)        
         # =====================================================
+        final_center = self.center if not self.multi_centering else temp_centers
         # teacher centering and sharpening
         temp = self.teacher_temp_schedule[epoch]
         teacher_out = F.softmax((teacher_output - final_center) / temp, dim=-1)
@@ -520,9 +524,10 @@ class DINOLoss(nn.Module):
 
 
 class DINOLossMultiCenter(nn.Module):
+    """Custom dino loss which handles multiple centers taken by the original paper."""
     def __init__(self, out_dim, multi_center_training, ncrops, warmup_teacher_temp, teacher_temp,
                  warmup_teacher_temp_epochs, nepochs, student_temp=0.1,
-                 center_momentum=0.9, num_domains = None, examples_in_each_domain = None, 
+                 center_momentum=0.9, num_domains = None, examples_in_each_domain = None,
                  device_id = None, 
                  only_cross_domain = False, dino_loss = True,
                  barlow_loss = False, barlow_loss_weight = 0.2,
@@ -825,10 +830,10 @@ class DataAugmentationDINO(object):
         flip_and_color_jitter = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
-                [transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)],
+                [utils.Wrapper6C(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1))],
                 p=0.8
             ),
-            transforms.RandomGrayscale(p=0.2),
+            #utils.Wrapper6C(transforms.RandomGrayscale(p=0.2)),
         ])
         # normalize = transforms.Compose([
         #     transforms.ToTensor(),
@@ -837,26 +842,23 @@ class DataAugmentationDINO(object):
 
         # first global crop
         self.global_transfo1 = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop(224, scale=global_crops_scale),
             flip_and_color_jitter,
             utils.GaussianBlur(1.0),
-#            normalize,
         ])
         # second global crop
         self.global_transfo2 = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop(224, scale=global_crops_scale),
             flip_and_color_jitter,
-            utils.GaussianBlur(0.1),
-            utils.Solarization(0.2),
-#            normalize,
+            utils.GaussianBlur(0.1)
+            #utils.Wrapper6C(utils.Solarization(0.2)),
         ])
         # transformation for the local small crops
         self.local_crops_number = local_crops_number
         self.local_transfo = transforms.Compose([
-            transforms.RandomResizedCrop(96, scale=local_crops_scale, interpolation=Image.BICUBIC),
+            transforms.RandomResizedCrop(96, scale=local_crops_scale),
             flip_and_color_jitter,
             utils.GaussianBlur(p=0.5),
-#            normalize,
         ])
 
     def __call__(self, images):
