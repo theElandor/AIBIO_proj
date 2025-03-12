@@ -31,7 +31,8 @@ import torch
 from torch import nn
 import torch.distributed as dist
 from PIL import ImageFilter, ImageOps
-
+import torchvision.transforms.functional as F
+from torchvision.transforms import PILToTensor
 
 class GaussianBlur(object):
     """
@@ -47,11 +48,60 @@ class GaussianBlur(object):
         if not do_it:
             return img
 
-        return img.filter(
-            ImageFilter.GaussianBlur(
-                radius=random.uniform(self.radius_min, self.radius_max)
-            )
-        )
+        radius = random.uniform(self.radius_min, self.radius_max)
+        blurred = F.gaussian_blur(img, kernel_size=3, sigma=radius)
+        return blurred
+
+
+class Wrapper6C:
+    def __init__(self, transform):
+        """
+        A wrapper to apply a torchvision transform to a 6-channel image tensor.
+        Args:
+            transform: The torchvision transform to be applied. E.g., ColorJitter, Normalize, etc.
+        """
+        self.transform = transform
+        self.p2t = PILToTensor()
+
+    def __call__(self, tensor):
+        """
+        Apply the transformation to a 6-channel tensor.
+
+        Args:
+            tensor (Tensor): A 6-channel image tensor of shape (6, H, W).
+        
+        Returns:
+            Tensor: Transformed 6-channel tensor.
+        """
+        if tensor.shape[0] != 6:
+            raise ValueError("Input tensor must have 6 channels")
+        
+        # Split the 6-channel tensor into two 3-channel tensors
+        tensor_1 = tensor[:3]  # First 3 channels
+        tensor_2 = tensor[3:]  # Last 3 channels
+
+        # Apply the transformation to both tensors
+        tensor_1 = self._apply_transform_to_single_tensor(tensor_1)
+        tensor_2 = self._apply_transform_to_single_tensor(tensor_2)
+        
+        # Concatenate the two transformed parts back together
+        return torch.cat((tensor_1, tensor_2), dim=0)
+
+    def _apply_transform_to_single_tensor(self, tensor):
+        """
+        Helper function to apply the transformation to a single 3-channel tensor.
+        
+        Args:
+            tensor (Tensor): A 3-channel image tensor of shape (3, H, W).
+        
+        Returns:
+            Tensor: Transformed 3-channel tensor.
+        """
+        # Convert tensor to PIL Image for applying the transform
+        pil_image = F.to_pil_image(tensor)
+        pil_image = self.transform(pil_image)        
+        tensor = self.p2t(pil_image)
+        return tensor
 
 
 class Solarization(object):
@@ -483,7 +533,7 @@ def init_distributed_mode(args):
         print('Will run the code on one GPU.')
         args.rank, args.gpu, args.world_size = 0, 0, 1
         os.environ['MASTER_ADDR'] = '127.0.0.1'
-        os.environ['MASTER_PORT'] = '29501'
+        os.environ['MASTER_PORT'] = '29502'
     else:
         print('Does not support training without GPU.')
         sys.exit(1)

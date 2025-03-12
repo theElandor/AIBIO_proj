@@ -368,6 +368,10 @@ def load_dino_weights(model, pretrained_weights, checkpoint_key="student"):
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
         # remove `backbone.` prefix induced by multicrop wrapper
         state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
+        # ========= for 6 channels ===========
+        # do not load projection weights since the size are mismatching
+        state_dict.pop("patch_embed.proj.weight",None)
+        
         msg = model.load_state_dict(state_dict, strict=False)
         print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
     else:
@@ -388,25 +392,22 @@ def get_samples_per_domain(metadata_path):
 			
 	"""
 	print("Computing samples per domain...")
-	dataset = pd.read_csv(metadata_path)
-	n_of_domains = len(dataset['experiment'].unique())	
+	dataset = pd.read_csv(metadata_path)	
 	train = dataset[dataset['dataset'] == 'train']
 	test = dataset[dataset['dataset'] == 'test']
 	val = dataset[dataset['dataset'] == 'val']
 	print(f"Train set: found {len(train)} images")
 	print(f"Test set: found {len(test)} images")
 	print(f"Validation set: found {len(val)} images")
-	offsets = {"HUVEC":0, "U2OS": 24, "RPE":29, "HEPG2":40}
-	spd = np.zeros((3, n_of_domains))
-	for s,split in enumerate([train, val, test]):
-		vals = split['experiment'].value_counts()
-		for domain in vals.index:			
-			cell_type, experiment = domain.split("-")
-			final_index = offsets[cell_type] + int(experiment) - 1
-			spd[s, final_index] = vals[domain]
-	return spd
+	mapping = {k:i for i,k in enumerate(train["experiment"].unique())}
+	n_of_domains = len(train["experiment"].unique())
+	spd = np.zeros(n_of_domains)	
+	vals = train['experiment'].value_counts()
+	for domain in vals.index:
+		spd[mapping[domain]] = vals[domain]
+	return spd, mapping
 
-def get_batch_domains(metadata):
+def get_batch_domains(metadata, mapping):
 	"""
 	Computes the domain indices for each sample belonging to the batch.
 	Args:
@@ -414,6 +415,5 @@ def get_batch_domains(metadata):
 	Returns:
 		batch_domains: a list of domain indices for each sample in the batch.
 	"""
-	offsets = {"HUVEC":0, "U2OS": 24, "RPE":29, "HEPG2":40}
-	batch_domains = [int(x.split("-")[1])+offsets[x.split("-")[0]]-1 for x in metadata[0][4]]
+	batch_domains = [mapping[x] for x in metadata[0][4]]
 	return batch_domains
