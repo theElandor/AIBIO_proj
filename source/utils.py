@@ -16,6 +16,7 @@ from collections import namedtuple
 from source.vision_transformer import VisionTransformer
 from functools import partial
 import torch.nn as nn
+from collate import *
 
 def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:
     """!Load only network weights from checkpoint."""
@@ -240,13 +241,7 @@ def config_loader(config):
         options['num_classes'] = config['num_classes']
     
     assert 'collate_fun' in config, "Please provide a valid collate function."
-    if config['collate_fun'] == "simclr_collate":
-        collate = simclr_collate
-    elif config['collate_fun'] == "simple_collate":
-        collate = simple_collate
-    elif config['collate_fun'] == 'dino_test_collate':
-        collate = dino_test_collate
-    elif config['collate_fun'] == 'channelnorm_collate':
+    if config['collate_fun'] == 'channelnorm_collate':
         collate = channelnorm_collate
     elif config['collate_fun'] == 'tuple_channelnorm_collate':
         collate = tuple_channelnorm_collate
@@ -373,168 +368,8 @@ def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir
     )
     print(f"Model saved in {name}.")
 
-def simclr_collate(batch):
-    """
-    Custom collate function for processing a batch of Rxrx1 dataset images.
 
-    This function performs the following steps:
-    1. Converts images from uint8 to float format.
-    2. Normalizes images using mean and variance from metadata.
-    3. Applies a series of augmentations to each normalized image.
-    4. Stacks and concatenates original and augmented images.
 
-    The batch will be composed by:
-     - batch_size normal images
-     - batch size augmented images
-    The correspondance between each original image and its augmented counterpart is:
-    batch[i] --> batch[i + 256]
-
-    Args:
-        batch (list of tuples): Each tuple contains:
-            - image (Tensor): Raw image in uint8 format.
-            - sirna_id (int): Identifier for the sirna.
-            - metadata (list): Metadata containing mean and variance for normalization.
-
-    Returns:
-        tuple: (tot_images, sirna_ids, metadata)
-            - tot_images (Tensor): Concatenated tensor of normalized and augmented images.
-            - sirna_ids (tuple): Tuple of sirna IDs.
-            - metadata (tuple): Tuple of metadata for each sample.
-    """
-    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])
-    # view for self supervised learning
-    augmentation = transforms.Compose([
-        transforms.RandomResizedCrop(256),
-        transforms.ColorJitter(brightness=0.5, contrast=0.5),
-        transforms.GaussianBlur(3, sigma=(0.1, 2.0))
-])
-    images, sirna_ids, metadata = zip(*batch)
-    augmented_images = []
-    norm_images = []
-    for i, image in enumerate(images):
-        mean = metadata[i][11]
-        variance = metadata[i][12]
-        image = image_to_tensor(image)
-        image = (image - mean)/math.sqrt(variance)
-        aug_image = augmentation(image)
-
-        augmented_images.append(aug_image)
-        norm_images.append(image)
-
-    norm_images = torch.stack(norm_images) 
-    augmented_images = torch.stack(augmented_images)
-
-    tot_images = torch.cat([norm_images,augmented_images],dim=0)
-
-    return tot_images, sirna_ids, metadata
-
-def simple_collate(batch):
-    """
-    Simple collate function used to normalize images for supervised learning.
-    It performs the same steps of the simclr_collate without augmentation,
-    so it only performs normalization.
-    """
-    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])    
-    images, sirna_ids, metadata = zip(*batch)    
-    norm_images = []
-    for i, image in enumerate(images):
-        mean = metadata[i][11]
-        variance = metadata[i][12]
-        image = image_to_tensor(image)
-        image = (image - mean)/math.sqrt(variance)
-        norm_images.append(image)
-    norm_images = torch.stack(norm_images)         
-    return norm_images, sirna_ids, metadata
-
-def channelnorm_collate(batch):
-    '''
-    Collate function for supervised training
-    It performs channel-wise normalization
-    '''
-    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])    
-    images, sirna_ids, metadata = zip(*batch)    
-    norm_images = []
-    for i, image in enumerate(images):
-        #getting the tuples out of the metadata
-        mean_tuple = eval(metadata[i][11])
-        variance_tuple = eval(metadata[i][12])
-        
-        #converting the tuples to tensors
-        mean_tensor = torch.tensor(mean_tuple).view(len(mean_tuple),1,1)
-        std_tensor = torch.sqrt(torch.tensor(variance_tuple).view(len(mean_tuple),1,1))
-        
-        image = image_to_tensor(image)
-        image = (image - mean_tensor)/std_tensor
-        norm_images.append(image)
-        
-    norm_images = torch.stack(norm_images)
-    return norm_images, sirna_ids, metadata
-
-def tuple_channelnorm_collate(batch)-> Tuple[torch.Tensor, Tuple[Tuple[int,int], ...], Tuple[Tuple[List[Any], List[Any]], ...]]:
-    '''
-    Collate function that performs channel-wise normalization
-    '''
-    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])    
-    images, sirna_ids, metadata = zip(*batch) 
-
-    #images, sirna_ids, metadata are tuples of tuples of shape:
-    #images --> tuple of len BATCH_SIZE, with tuples of len 2 inside, consisting in two images(tensors)
-    #sirna_ids --> tuple of len BATCH_SIZE, with tuples of len 2 inside, consisting in two integers
-    #metadata --> tuple of len BATCH_SIZE, with tuples of len 2 inside, with two lists containing the metadata (len = 13)
-    #recap!
-    #images--> tuple(tuple(tensor))   sirna_ids --> tuple(tuple(int))   metadata --> tuple(tuple(list(whatever types are inside the metadata)))
-
-    all_images = [] #list of all the already stacked couple of images
-    for i, image_tuple in enumerate(images):
-        image_tuple_list = []
-        for j , image in enumerate(image_tuple):
-            #getting the mean/var tuples out of the metadata
-            mean_tuple = eval(metadata[i][j][11])
-            variance_tuple = eval(metadata[i][j][12])
-
-            #converting the tuples to tensors
-            mean_tensor = torch.tensor(mean_tuple).view(len(mean_tuple),1,1)
-            std_tensor = torch.sqrt(torch.tensor(variance_tuple)).view(len(mean_tuple),1,1)
-            image:torch.Tensor = image_to_tensor(image)
-            image = (image - mean_tensor)/std_tensor
-            image_tuple_list.append(image)
-        #stacking the two corresponding images and adding them to the list
-        all_images.append(torch.stack(image_tuple_list,dim=0))
-    all_images = torch.stack(all_images,dim=0)         
-    
-    #final shape: [BATCH_SIZE , 2 (THE NUMBER OF CORRESPONDING IMAGES), 3 (CHANNELS) , HEIGHT , WIDTH]
-    #EX: torch.Size([32, 2, 3, 256, 256])
-    return all_images, sirna_ids, metadata 
-
-def dino_test_collate(batch):
-    """
-    Transformations used for dino training that must be used also 
-    during validation and head training. For now we are just
-    normalizing using ImageNet values of mean and standard deviation.
-    A little bit of code is repeated here for the sake of testing.
-    Requires 3 channel metadata.
-    """
-    crop = transforms.Compose([
-        transforms.CenterCrop(224)
-        ])
-    images, sirna_ids, metadata = zip(*batch)
-    
-    norm_images = []
-    for i, image in enumerate(images):
-        
-        mean_tuple = eval(metadata[i][11])
-        variance_tuple = eval(metadata[i][12])
-        
-        #converting the tuples to tensors
-        mean_tensor = (torch.tensor(mean_tuple).view(3,1,1))/255.0
-        std_tensor = (torch.sqrt(torch.tensor(variance_tuple)).view(3,1,1))/255.0
-
-        image = image.float() / 255.0 #convert to 0-1 range
-        image = (image - mean_tensor)/std_tensor # shift using ImageNet mean and std
-        image = crop(image) # center crop according to ViT standard input
-        norm_images.append(image)
-    norm_images = torch.stack(norm_images)         
-    return norm_images, sirna_ids, metadata
 
 
 def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
@@ -580,7 +415,7 @@ def initialize_weights(module):
     Recursively initializes the weights of a module and its submodules using Kaiming initialization
     for Linear layers, and uniform initialization for BatchNorm layers.
     """
-    if isinstance(module, nn.Linear):
+    if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
         nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
         if module.bias is not None:
             nn.init.zeros_(module.bias)
@@ -592,3 +427,7 @@ def initialize_weights(module):
         initialize_weights(submodule)
 
 
+def min_max_scale(tensor, min_val=0, max_val=1):
+    """Scales a tensor to the range [min_val, max_val]."""
+    X_min, X_max = tensor.min(), tensor.max()
+    return min_val + (tensor - X_min) * (max_val - min_val) / (X_max - X_min)

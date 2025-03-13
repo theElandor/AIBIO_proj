@@ -135,3 +135,22 @@ class CellClassifier(nn.Module):
         x = self.head(x)
         return x
 
+
+class Resnet50_6chan(nn.Module):
+    def __init__(self,num_classes:int):
+        super(Resnet50_6chan, self).__init__()
+        new_conv1 = nn.Conv2d(in_channels=6,out_channels=64,kernel_size=7,stride=2,padding=3,bias=False)
+        resnet =models.resnet50()
+        resnet.apply(initialize_weights)
+        with torch.no_grad():
+            new_conv1.weight[:,:3,:,:] = resnet.conv1.weight.clone()
+            new_conv1.weight[:,3:,:,:] = resnet.conv1.weight.clone()
+        
+        resnet.conv1 = new_conv1
+        resnet.fc = nn.Linear(in_features=2048,out_features=num_classes)
+
+        self.resnet = resnet
+    def forward(self,x:torch.Tensor):
+        return self.resnet(x)
+
+
