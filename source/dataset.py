@@ -38,7 +38,7 @@ class Rxrx1(Dataset):
     """
 
     
-    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None,subset = 'all'):
+    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all'):
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
                                Not both!!!')
@@ -57,13 +57,17 @@ class Rxrx1(Dataset):
         else:   
             self.metadata = dataframe.copy(deep=True)
         
-        #creating dataset subsets, if necessary
-        #OPTIONS: all, huvec
-        if subset == 'all':
-            pass
-        elif subset == 'huvec':
-            self.metadata = self.metadata[self.metadata['cell_type']=='HUVEC']
         
+        # ================ CELL TYPE ================
+        assert subset in "all huvec".split(), "Invalid cell type specified"
+        if subset == 'all': pass        
+        elif subset == 'huvec': self.metadata = self.metadata[self.metadata['cell_type']=='HUVEC']        
+        # ================ SPLIT ================
+        assert split in "all train test val".split(), "Invalid split specified."
+        if split == "all": pass        
+        else: self.metadata = self.metadata[self.metadata['dataset'] == split]
+        
+
         #this part changes between different dataset directories
         #IF YOU WANT TO CREATE A NEW SELF.ITEMS BEHAVIOUR, PUT THE PATHS THAT CORRESPOND TO THE SAME IMAGE IN A TUPLE, IN
         #ASCENDING ORDER
@@ -145,80 +149,3 @@ class Rxrx1(Dataset):
     
     def get_metadata(self):
         return self.metadata
-    
-
-class DefaultDatasetBehaviour:
-    def __init__(self,dataset:Rxrx1):
-        self.dataset = dataset
-
-    def __call__(self,index:int):
-        #img_path, sirna_id, metadata = self.dataset.items[index]
-        #return (decode_image(img_path), sirna_id, metadata)
-        return self.dataset.items[index]
-    
-class DefaultDatasetBehaviourV2: 
-    def __init__(self,dataset:Rxrx1):
-        self.dataset = dataset
-
-    def __call__(self,index:int):
-        img_path_012, img_path_345, sirna_id, metadata = self.dataset.items[index]
-        
-        return (stacked_image, sirna_id, metadata)
-    
-class TupleDatasetBehaviour:
-    def __init__(self,dataset:Rxrx1):
-        self.dataset = dataset
-
-    def __call__(self,index:int):
-        #getting the whole dataframe
-        df = self.dataset.get_metadata()
-        
-        #getting one random sample
-        img_path_1, sirna_id_1, metadata_1 = self.dataset.items[index]
-        experiment_1 = metadata_1[4]
-
-        #extracting metadata for the new sample
-        df_filtered = df[(df['sirna_id'] == sirna_id_1) & (df['experiment'] != experiment_1)]
-
-        #sampling a random sample that respects our constraints
-        if not df_filtered.empty:
-            random_index = df_filtered.sample(n=1).index[0]
-        else:
-            raise RuntimeError("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy")
-        
-        img_path_2, sirna_id_2, metadata_2 = self.dataset.items[random_index]
-        
-        images = (decode_image(img_path_1),decode_image(img_path_2))
-        sirna_ids = (sirna_id_1,sirna_id_2)
-        metadatas = (metadata_1,metadata_2) 
-        return (images, sirna_ids,metadatas)
-    
-class TupleDatasetBehaviourV2:
-    def __init__(self,dataset:Rxrx1):
-        self.dataset = dataset
-
-    def __call__(self,index:int):
-        #getting the whole dataframe
-        df = self.dataset.get_metadata()
-        
-        #getting one random sample
-        img_path_012_1, img_path_345_1, sirna_id_1, metadata_1 = self.dataset.items[index]
-        experiment_1 = metadata_1[4]
-
-        #extracting metadata for the new sample
-        df_filtered = df[(df['sirna_id'] == sirna_id_1) & (df['experiment'] != experiment_1)]
-
-        #sampling a random sample that respects our constraints
-        if not df_filtered.empty:
-            random_index = df_filtered.sample(n=1).index[0]
-        else:
-            raise RuntimeError("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy")
-        
-        img_path_012_2, img_path_345_2, sirna_id_2, metadata_2 = self.dataset.items[random_index]
-        stacked_image_1 = torch.cat((decode_image(img_path_012_1),decode_image(img_path_345_1)),dim=0)
-        stacked_image_2 = torch.cat((decode_image(img_path_012_2),decode_image(img_path_345_2)),dim=0)
-        images = (stacked_image_1,stacked_image_2)
-        sirna_ids = (sirna_id_1,sirna_id_2)
-        metadatas = (metadata_1,metadata_2) 
-        return (images, sirna_ids,metadatas)
-    

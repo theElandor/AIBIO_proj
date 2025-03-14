@@ -16,7 +16,7 @@ from collections import namedtuple
 from source.vision_transformer import VisionTransformer
 from functools import partial
 import torch.nn as nn
-from collate import *
+from source.collate import *
 
 def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:
     """!Load only network weights from checkpoint."""

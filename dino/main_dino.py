@@ -1,3 +1,4 @@
+
 # Copyright (c) Facebook, Inc. and its affiliates.
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,9 +21,9 @@ import math
 import json
 from pathlib import Path
 from dataset import Rxrx1
+from collate import *
+#from old_dataset import Rxrx1
 from hubconf import dino_vitb16
-from torchvision.models import ViT_B_16_Weights
-from torch.utils.data import Subset
 from bio_utils import load_dino_weights, get_samples_per_domain, get_batch_domains
 
 
@@ -33,7 +34,6 @@ import torch.nn as nn
 import torch.distributed as dist
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
-from torchvision import datasets, transforms
 from torchvision import models as torchvision_models
 import pandas as pd
 import wandb
@@ -163,28 +163,39 @@ def train_dino(args):
     cudnn.benchmark = True
 
     # ============ preparing data ... ============
-    transform = DataAugmentationDINO(
-        args.global_crops_scale,
-        args.local_crops_scale,
-        args.local_crops_number,
-    )
     
-    df = pd.read_csv(args.metadata_path)
-    df_train = df[df["dataset"] == "train"]
-    if args.cell_type is not None:
-        df_train = df_train[df_train["cell_type"] == args.cell_type]
+    # df = pd.read_csv(args.metadata_path)
+    # df_train = df[df["dataset"] == "train"]
+    # if args.cell_type is not None:
+    #     df_train = df_train[df_train["cell_type"] == args.cell_type]
         
+    # dataset = Rxrx1(args.data_path,
+    #                 dataframe=df_train,
+    #                 mode='tuple',
+    #                 transforms_=transform)
+
+    df = pd.read_csv(args.metadata_path)
     dataset = Rxrx1(args.data_path,
-                    dataframe=df_train,
-                    mode='tuple',
-                    transforms_=transform)    
+                    dataframe=df,
+                    subset=args.cell_type,
+                    split='train',
+                )
 
     sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
+    # data_loader = torch.utils.data.DataLoader(
+    #     dataset,
+    #     sampler=sampler,
+    #     batch_size=args.batch_size_per_gpu,
+    #     num_workers=args.num_workers,
+    #     pin_memory=True,
+    #     drop_last=True,
+    # )
     data_loader = torch.utils.data.DataLoader(
         dataset,
         sampler=sampler,
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
+        collate_fn = tuple_channelnorm_collate,
         pin_memory=True,
         drop_last=True,
     )
@@ -371,6 +382,8 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
         # This tecnique is called Cross Batch (CB) learning.
         # When in default mode, the 10 images are coming from the same image A.
         # This means that the metadata should only have 1 element.
+        # WARNING: don't use sirna here (the _ in the for loop), as I still
+        # have not fixed after the last dataset update.
         #==============================================
         it = len(data_loader) * epoch + it  # global training iteration
         for i, param_group in enumerate(optimizer.param_groups):
@@ -824,51 +837,6 @@ class DINOLossMultiCenter(nn.Module):
         
         centers_to_use_for_domain_aligning = (cent*one_hot_label).sum(1)
         return centers_to_use_for_domain_aligning
-
-class DataAugmentationDINO(object):
-    def __init__(self, global_crops_scale, local_crops_scale, local_crops_number):
-        flip_and_color_jitter = transforms.Compose([
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomApply(
-                [utils.Wrapper6C(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1))],
-                p=0.8
-            ),
-            #utils.Wrapper6C(transforms.RandomGrayscale(p=0.2)),
-        ])
-        # normalize = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        # ])
-
-        # first global crop
-        self.global_transfo1 = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=global_crops_scale),
-            flip_and_color_jitter,
-            utils.GaussianBlur(1.0),
-        ])
-        # second global crop
-        self.global_transfo2 = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=global_crops_scale),
-            flip_and_color_jitter,
-            utils.GaussianBlur(0.1)
-            #utils.Wrapper6C(utils.Solarization(0.2)),
-        ])
-        # transformation for the local small crops
-        self.local_crops_number = local_crops_number
-        self.local_transfo = transforms.Compose([
-            transforms.RandomResizedCrop(96, scale=local_crops_scale),
-            flip_and_color_jitter,
-            utils.GaussianBlur(p=0.5),
-        ])
-
-    def __call__(self, images):
-        crops = []
-        image_1, image_2 = images
-        crops.append(self.global_transfo1(image_1))
-        crops.append(self.global_transfo2(image_1))
-        for _ in range(self.local_crops_number):
-            crops.append(self.local_transfo(image_2))
-        return crops, len(crops)-self.local_crops_number, self.local_crops_number
 
 
 if __name__ == '__main__':
