@@ -5,7 +5,7 @@
 #SBATCH --account=ai4bio2024
 #SBATCH --partition=all_usr_prod
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=32
 #SBATCH --mem=100G
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1 --constraint="gpu_RTX6000_24G|gpu_RTXA5000_24G|gpu_A40_48G"
@@ -17,11 +17,12 @@ python3 /homes/mlugli/AIBIO_proj/dino/main_dino.py \
     --use_original_code False \
     --arch vit_small \
     --saveckp_freq 2\
-    --data_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_v2.1 \
+    --data_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig \
     --metadata_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig/metadata/meta.csv \
     --output_dir /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/6c_custom_centering_2 \
     --load_pretrained /work/h2020deciderficarra_shared/rxrx1/checkpoints/OFFICIAL_ViT_pretrained/dino_deitsmall16_pretrain.pth \
     --warmup_teacher_temp_epochs 10 \
     --lr 5e-4 \
     --weight_decay 7e-3 \
-    --cell_type HUVEC
+    --cell_type HUVEC \
+    --num_workers 32 \

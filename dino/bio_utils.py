@@ -275,79 +275,6 @@ def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir
     )
     print(f"Model saved in {name}.")
 
-def simclr_collate(batch):
-    """
-    Custom collate function for processing a batch of Rxrx1 dataset images.
-
-    This function performs the following steps:
-    1. Converts images from uint8 to float format.
-    2. Normalizes images using mean and variance from metadata.
-    3. Applies a series of augmentations to each normalized image.
-    4. Stacks and concatenates original and augmented images.
-
-    The batch will be composed by:
-     - batch_size normal images
-     - batch size augmented images
-    The correspondance between each original image and its augmented counterpart is:
-    batch[i] --> batch[i + 256]
-
-    Args:
-        batch (list of tuples): Each tuple contains:
-            - image (Tensor): Raw image in uint8 format.
-            - sirna_id (int): Identifier for the sirna.
-            - metadata (list): Metadata containing mean and variance for normalization.
-
-    Returns:
-        tuple: (tot_images, sirna_ids, metadata)
-            - tot_images (Tensor): Concatenated tensor of normalized and augmented images.
-            - sirna_ids (tuple): Tuple of sirna IDs.
-            - metadata (tuple): Tuple of metadata for each sample.
-    """
-    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])
-    # view for self supervised learning
-    augmentation = transforms.Compose([
-        transforms.RandomResizedCrop(256),
-        transforms.ColorJitter(brightness=0.5, contrast=0.5),
-        transforms.GaussianBlur(3, sigma=(0.1, 2.0))
-])
-    images, sirna_ids, metadata = zip(*batch)
-    augmented_images = []
-    norm_images = []
-    for i, image in enumerate(images):
-        mean = metadata[i][11]
-        variance = metadata[i][12]
-        image = image_to_tensor(image)
-        image = (image - mean)/math.sqrt(variance)
-        aug_image = augmentation(image)
-
-        augmented_images.append(aug_image)
-        norm_images.append(image)
-
-    norm_images = torch.stack(norm_images) 
-    augmented_images = torch.stack(augmented_images)
-
-    tot_images = torch.cat([norm_images,augmented_images],dim=0)
-
-    return tot_images, sirna_ids, metadata
-
-def simple_collate(batch):
-    """
-    Simple collate function used to normalize images for supervised learning.
-    It performs the same steps of the simclr_collate without augmentation,
-    so it only performs normalization.
-    """
-    image_to_tensor = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float)])    
-    images, sirna_ids, metadata = zip(*batch)    
-    norm_images = []
-    for i, image in enumerate(images):
-        mean = metadata[i][11]
-        variance = metadata[i][12]
-        image = image_to_tensor(image)
-        image = (image - mean)/math.sqrt(variance)
-        norm_images.append(image)
-    norm_images = torch.stack(norm_images)         
-    return norm_images, sirna_ids, metadata
-
 
 def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
     x_batch, _, _ = data
@@ -417,3 +344,9 @@ def get_batch_domains(metadata, mapping):
 	"""
 	batch_domains = [mapping[x] for x in metadata[0][4]]
 	return batch_domains
+
+
+def min_max_scale(tensor, min_val=0, max_val=1):
+    """Scales a tensor to the range [min_val, max_val]."""
+    X_min, X_max = tensor.min(), tensor.max()
+    return min_val + (tensor - X_min) * (max_val - min_val) / (X_max - X_min)

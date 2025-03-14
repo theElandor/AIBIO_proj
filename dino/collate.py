@@ -1,13 +1,61 @@
 import torch
-import torch.nn as nn
 import torchvision.transforms.v2 as transforms
 import torchvision.transforms.v2.functional as F
 import math
-from typing import Tuple,List,Any
+from typing import Any
 from torchvision.io import decode_image
-import time
-from source.utils import min_max_scale
+from bio_utils import min_max_scale
+import utils
+import numpy as np
 
+class DataAugmentationDINO(object):
+    def __init__(self, global_crops_scale, local_crops_scale, local_crops_number):
+        flip_and_color_jitter = transforms.Compose([
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomApply(
+                [utils.Wrapper6C(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1))],
+                p=0.8
+            ),
+            #utils.Wrapper6C(transforms.RandomGrayscale(p=0.2)),
+        ])
+        # normalize = transforms.Compose([
+        #     transforms.ToTensor(),
+        #     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        # ])
+
+        # first global crop
+        self.global_transfo1 = transforms.Compose([
+            transforms.RandomResizedCrop(224, scale=global_crops_scale),
+            flip_and_color_jitter,
+            utils.GaussianBlur(1.0),
+        ])
+        # second global crop
+        self.global_transfo2 = transforms.Compose([
+            transforms.RandomResizedCrop(224, scale=global_crops_scale),
+            flip_and_color_jitter,
+            utils.GaussianBlur(0.1)
+            #utils.Wrapper6C(utils.Solarization(0.2)),
+        ])
+        # transformation for the local small crops
+        self.local_crops_number = local_crops_number
+        self.local_transfo = transforms.Compose([
+            transforms.RandomResizedCrop(96, scale=local_crops_scale),
+            flip_and_color_jitter,
+            utils.GaussianBlur(p=0.5),
+        ])
+
+    def __call__(self, images):
+        # images: (B,2,C,H,W)
+        crops = []
+    #    image_1, image_2 = images
+        im1 = images[:,0,:,:,:].squeeze(1)
+        im2 = images[:,1,:,:,:].squeeze(1)
+        crops.append(self.global_transfo1(im1))
+        crops.append(self.global_transfo2(im1))
+        for _ in range(self.local_crops_number):
+            crops.append(self.local_transfo(im2))
+        return crops, len(crops)-self.local_crops_number, self.local_crops_number
+    
 def channelnorm_collate(batch): 
     '''
     Collate function for supervised training
@@ -47,7 +95,12 @@ def tuple_channelnorm_collate(batch):
     It performs channel-wise normalization
     '''
     paths, sirna_ids, metadatas = zip(*batch)
-
+    # hardcoded for simplicity
+    transform = DataAugmentationDINO(
+        (0.4, 1.), 
+        (0.05, 0.4),
+        8,
+    )
     #paths dimensionality: (batch_size,2,num_paths)
     #sirna_ids dimensionality: (batch_size,2) tuple
     #metadatas dimensionality: (batch_size,2,len(metadata_list)) tuple
@@ -77,6 +130,16 @@ def tuple_channelnorm_collate(batch):
         norm_images.append(torch.stack([stacked_image_norm_1, stacked_image_norm_2], dim=0))
 
     norm_images = torch.stack(norm_images,dim=0)  #dimensionality: (batch_size,2,n_channels,w,h)
-    #OUTPUT SHAPES:
-    #norm images --> #TODO
-    return norm_images, sirna_ids, metadatas
+    # ================ APPLY DINO AUGMENTATIONS ================
+    crops, num_crops, num_local_crops = transform(norm_images)
+    # fix metadata to (2,13,B) shape instead of (B,2,13)
+    # WARNING: sirna still needs to be fixed
+    m = np.array(metadatas)
+    B = m.shape[0]
+    V = m.shape[1]
+    M = m.shape[2]
+    n = np.empty((V,M,B),dtype=object)
+    for i in range(B):
+        for j in range(V):
+            n[j,:,i] = m[i,j,:]    
+    return crops, sirna_ids, n.tolist()

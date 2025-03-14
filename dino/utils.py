@@ -31,7 +31,7 @@ import torch
 from torch import nn
 import torch.distributed as dist
 from PIL import ImageFilter, ImageOps
-import torchvision.transforms.functional as F
+import torchvision.transforms.v2.functional as F
 from torchvision.transforms import PILToTensor
 
 class GaussianBlur(object):
@@ -60,8 +60,7 @@ class Wrapper6C:
         Args:
             transform: The torchvision transform to be applied. E.g., ColorJitter, Normalize, etc.
         """
-        self.transform = transform
-        self.p2t = PILToTensor()
+        self.transform = transform        
 
     def __call__(self, tensor):
         """
@@ -73,35 +72,19 @@ class Wrapper6C:
         Returns:
             Tensor: Transformed 6-channel tensor.
         """
-        if tensor.shape[0] != 6:
+        if tensor.shape[1] != 6:
             raise ValueError("Input tensor must have 6 channels")
         
         # Split the 6-channel tensor into two 3-channel tensors
-        tensor_1 = tensor[:3]  # First 3 channels
-        tensor_2 = tensor[3:]  # Last 3 channels
+        tensor_1 = tensor[:, :3, :, :]  # First 3 channels
+        tensor_2 = tensor[:, 3:, :, :]  # Last 3 channels
 
         # Apply the transformation to both tensors
-        tensor_1 = self._apply_transform_to_single_tensor(tensor_1)
-        tensor_2 = self._apply_transform_to_single_tensor(tensor_2)
+        tensor_1 = self.transform(tensor_1)
+        tensor_2 = self.transform(tensor_2)
         
         # Concatenate the two transformed parts back together
-        return torch.cat((tensor_1, tensor_2), dim=0)
-
-    def _apply_transform_to_single_tensor(self, tensor):
-        """
-        Helper function to apply the transformation to a single 3-channel tensor.
-        
-        Args:
-            tensor (Tensor): A 3-channel image tensor of shape (3, H, W).
-        
-        Returns:
-            Tensor: Transformed 3-channel tensor.
-        """
-        # Convert tensor to PIL Image for applying the transform
-        pil_image = F.to_pil_image(tensor)
-        pil_image = self.transform(pil_image)        
-        tensor = self.p2t(pil_image)
-        return tensor
+        return torch.cat((tensor_1, tensor_2), dim=1)
 
 
 class Solarization(object):
@@ -533,7 +516,7 @@ def init_distributed_mode(args):
         print('Will run the code on one GPU.')
         args.rank, args.gpu, args.world_size = 0, 0, 1
         os.environ['MASTER_ADDR'] = '127.0.0.1'
-        os.environ['MASTER_PORT'] = '29502'
+        os.environ['MASTER_PORT'] = '29503'
     else:
         print('Does not support training without GPU.')
         sys.exit(1)
