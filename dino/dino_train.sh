@@ -19,7 +19,7 @@ python3 /homes/mlugli/AIBIO_proj/dino/main_dino.py \
     --saveckp_freq 2\
     --data_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig \
     --metadata_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig/metadata/meta.csv \
-    --output_dir /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/6c_custom_centering_2 \
+    --output_dir /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/6c_1 \
     --load_pretrained /work/h2020deciderficarra_shared/rxrx1/checkpoints/OFFICIAL_ViT_pretrained/dino_deitsmall16_pretrain.pth \
     --warmup_teacher_temp_epochs 10 \
     --lr 5e-4 \
