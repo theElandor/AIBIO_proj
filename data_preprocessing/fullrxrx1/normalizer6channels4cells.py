@@ -50,20 +50,25 @@ var_dict = {
 }'''
 
 mean_dict = {
-    experiment: None
-}
+    experiment: None for experiment in experiment_list
+} 
 var_dict = {
-    experiment: None
+    experiment: None for experiment in experiment_list
 }
 for experiment in experiment_list:
     stacked_tensor = torch.cat(tensor_dict[experiment],dim=0)
-    mean_dict[experiment], var_dict[experiment] = torch.var_mean(stacked_tensor.float(),dim=(0,2,3))
+    var_dict[experiment] ,mean_dict[experiment]= torch.var_mean(stacked_tensor.float(),dim=(0,2,3))
     del stacked_tensor
     gc.collect()
 
-for experiment in tqdm(experiment_list):
-    df.loc[df['experiment'] == experiment, 'mean'] = [tuple(mean_dict[experiment].tolist())] * sum(df['experiment'] == experiment)
-    df.loc[df['experiment'] == experiment, 'var'] = [tuple(var_dict[experiment].tolist())] * sum(df['experiment'] == experiment)
+'''for experiment in tqdm(experiment_list):
+    df.loc[df['experiment'] == experiment, 'mean'] = tuple(mean_dict[experiment].tolist()) * sum(df['experiment'] == experiment)
+    df.loc[df['experiment'] == experiment, 'var'] = tuple(var_dict[experiment].tolist()) * sum(df['experiment'] == experiment)'''
+mean_values = [tuple(mean_dict[experiment].tolist()) for experiment in df['experiment']]
+var_values = [tuple(var_dict[experiment].tolist()) for experiment in df['experiment']]
+
+df['mean'] = mean_values
+df['var'] = var_values
 
 print(df.isna())
 df.to_csv(destination_path,index = False)

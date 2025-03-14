@@ -20,8 +20,7 @@ epochs: 20
 batch_size: 256
 loss: NCE # choose among [NCE, cross_entropy]
 opt: adam # choose among [adam,]
-collate_fun: simclr_collate # choose among [simclr_collate, simple_collate, dino_test_collate, channelnorm_collate, tuple_channelnorm_collate]
-dataset_mode: default #choose among [default, tuple]
+collate_fun: simclr_collate # choose among [channelnorm_collate, tuple_channelnorm_collate]
 lr: 0.005
 evaluation_freq: 4
 model_save_freq: 4

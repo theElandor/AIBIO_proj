@@ -38,7 +38,7 @@ class Rxrx1(Dataset):
     """
 
     
-    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None,mode:str = 'default'):
+    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None,subset = 'all'):
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
                                Not both!!!')
@@ -57,43 +57,88 @@ class Rxrx1(Dataset):
         else:   
             self.metadata = dataframe.copy(deep=True)
         
+        #creating dataset subsets, if necessary
+        #OPTIONS: all, huvec
+        if subset == 'all':
+            pass
+        elif subset == 'huvec':
+            self.metadata = self.metadata[self.metadata['cell_type']=='HUVEC']
+        
         #this part changes between different dataset directories
-        if root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v1.0':
-            self.items = [(os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' +
-                        str(item.site) + '.png'), item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)]
-            
-            #behaviour definition
-            if mode == 'default':
-                self.behaviour = DefaultDatasetBehaviour(self)
-            elif mode == 'tuple':
-                self.behaviour = TupleDatasetBehaviour(self)
-            else:
-                raise RuntimeError(f"Invalid mode: {mode}. Expected 'default' or 'tuple'.")
-        #new dataset
-        elif root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v2.1':
-            self.items = [(os.path.join(self.imgs_dir, 
-                                        item.experiment, 
-                                        "Plate" + str(item.plate), 
-                                        item.well + '_s' + str(item.site) + '_p' + str(part) + '_c012.png'),
+        #IF YOU WANT TO CREATE A NEW SELF.ITEMS BEHAVIOUR, PUT THE PATHS THAT CORRESPOND TO THE SAME IMAGE IN A TUPLE, IN
+        #ASCENDING ORDER
+        if self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v1.0':
+            items_list = [((os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' + str(item.site) + '.png')),
+                           item.sirna_id,
+                           item.experiment,
+                           list(item)) 
+                          for item in self.metadata.itertuples(index=False)]
+            self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
+        #v2 dataset version
+        elif self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v2.1':
+            items_list = [((os.path.join(self.imgs_dir, 
+                                  item.experiment, 
+                                  "Plate" + str(item.plate), 
+                                  item.well + '_s' + str(item.site) + '_p' + str(part) + '_c012.png'),
                             os.path.join(self.imgs_dir, 
-                                        item.experiment, 
-                                        "Plate" + str(item.plate), 
-                                        item.well + '_s' + str(item.site) + '_p' + str(part) + '_c345.png'),
-                           item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)
-                           for part in range(1,6)
-                          ]
-            #behaviour definition
-            if mode == 'default':
-                self.behaviour = DefaultDatasetBehaviourV2(self)
-            elif mode == 'tuple':
-                self.behaviour = TupleDatasetBehaviourV2(self)
-            else:
-                raise RuntimeError(f"Invalid mode: {mode}. Expected 'default' or 'tuple'.")
+                                  item.experiment, 
+                                  "Plate" + str(item.plate), 
+                                  item.well + '_s' + str(item.site) + '_p' + str(part) + '_c345.png')),
+                            item.sirna_id, 
+                           item.experiment,
+                           list(item))
+                          for item in self.metadata.itertuples(index=False) for part in range(1,6)]
+            self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
+        #orig dataset version    
+        elif self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_orig':
+            #old implementation
+            #self.items = [(paths, item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)]
+            items_list = [((os.path.join(self.imgs_dir, 
+                                  item.experiment, 
+                                  "Plate" + str(item.plate), 
+                                  item.well + '_s' + str(item.site) + '_w1.png'),
+                     os.path.join(self.imgs_dir, 
+                                  item.experiment, 
+                                  "Plate" + str(item.plate), 
+                                  item.well + '_s' + str(item.site) + '_w2.png'),
+                     os.path.join(self.imgs_dir, 
+                                  item.experiment, 
+                                  "Plate" + str(item.plate), 
+                                  item.well + '_s' + str(item.site) + '_w3.png'),
+                     os.path.join(self.imgs_dir, 
+                                  item.experiment, 
+                                  "Plate" + str(item.plate), 
+                                  item.well + '_s' + str(item.site) + '_w4.png'),
+                     os.path.join(self.imgs_dir, 
+                                  item.experiment, 
+                                  "Plate" + str(item.plate), 
+                                  item.well + '_s' + str(item.site) + '_w5.png'),
+                     os.path.join(self.imgs_dir, 
+                                  item.experiment, 
+                                  "Plate" + str(item.plate), 
+                                  item.well + '_s' + str(item.site) + '_w6.png')
+            ), item.sirna_id, item.experiment,list(item)) for item in self.metadata.itertuples(index=False)]
+            self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
         else:
             raise RuntimeError('You provided an invalid dataset path')
     def __getitem__(self, index):
-        imagedata_tuple = self.behaviour(index)
-        return imagedata_tuple
+        img_paths_1, sirna_id_1, experiment_1, metadata_1 = self.items.iloc[index]
+
+        #extracting metadata for the new sample
+        df_filtered = self.items[(self.items['sirna_id'] == sirna_id_1) & (self.items['experiment'] != experiment_1)].reset_index(drop=True)
+
+        #sampling a random sample that respects our constraints
+        if not df_filtered.empty:
+            random_index = df_filtered.sample(n=1).index[0]
+        else:
+            raise RuntimeError("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy")
+        
+        img_paths_2, sirna_id_2, _ ,metadata_2 = df_filtered.iloc[random_index]
+        
+        image_paths = (img_paths_1,img_paths_2)
+        sirna_ids = (sirna_id_1,sirna_id_2)
+        metadatas = (metadata_1,metadata_2) 
+        return (image_paths, sirna_ids,metadatas)
 
     def __len__(self):
         return len(self.items)
@@ -107,8 +152,9 @@ class DefaultDatasetBehaviour:
         self.dataset = dataset
 
     def __call__(self,index:int):
-        img_path, sirna_id, metadata = self.dataset.items[index]
-        return (decode_image(img_path), sirna_id, metadata)
+        #img_path, sirna_id, metadata = self.dataset.items[index]
+        #return (decode_image(img_path), sirna_id, metadata)
+        return self.dataset.items[index]
     
 class DefaultDatasetBehaviourV2: 
     def __init__(self,dataset:Rxrx1):
@@ -116,7 +162,7 @@ class DefaultDatasetBehaviourV2:
 
     def __call__(self,index:int):
         img_path_012, img_path_345, sirna_id, metadata = self.dataset.items[index]
-        stacked_image = torch.cat((decode_image(img_path_012),decode_image(img_path_345)),dim=0)
+        
         return (stacked_image, sirna_id, metadata)
     
 class TupleDatasetBehaviour:

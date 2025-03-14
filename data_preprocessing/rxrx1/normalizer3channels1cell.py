@@ -50,7 +50,7 @@ print('Any preexisting file with the same path will be deleted')
 #declaring a new, expanded dataframe
 old_df = pd.read_csv(os.path.join(root_dir,'rxrx1_v1.0','metadata.csv'))
 print(old_df['experiment'].value_counts())
-raise RuntimeError()
+
 old_df['mean'] = [(0.0, 0.0, 0.0)] * len(old_df)
 old_df['variance'] = [(0.0, 0.0, 0.0)] * len(old_df)
 old_df['dataset'] = 'tmp'
