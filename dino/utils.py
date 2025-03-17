@@ -25,14 +25,11 @@ import random
 import datetime
 import subprocess
 from collections import defaultdict, deque
-
 import numpy as np
 import torch
 from torch import nn
 import torch.distributed as dist
-from PIL import ImageFilter, ImageOps
 import torchvision.transforms.v2.functional as F
-from torchvision.transforms import PILToTensor
 
 class GaussianBlur(object):
     """
@@ -85,20 +82,6 @@ class Wrapper6C:
         
         # Concatenate the two transformed parts back together
         return torch.cat((tensor_1, tensor_2), dim=1)
-
-
-class Solarization(object):
-    """
-    Apply Solarization to the PIL image.
-    """
-    def __init__(self, p):
-        self.p = p
-
-    def __call__(self, img):
-        if random.random() < self.p:
-            return ImageOps.solarize(img)
-        else:
-            return img
 
 
 def load_pretrained_weights(model, pretrained_weights, checkpoint_key, model_name, patch_size):
@@ -516,7 +499,7 @@ def init_distributed_mode(args):
         print('Will run the code on one GPU.')
         args.rank, args.gpu, args.world_size = 0, 0, 1
         os.environ['MASTER_ADDR'] = '127.0.0.1'
-        os.environ['MASTER_PORT'] = '29503'
+        os.environ['MASTER_PORT'] = '29504'
     else:
         print('Does not support training without GPU.')
         sys.exit(1)

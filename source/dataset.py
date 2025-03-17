@@ -95,8 +95,6 @@ class Rxrx1(Dataset):
             self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
         #orig dataset version    
         elif self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_orig':
-            #old implementation
-            #self.items = [(paths, item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)]
             items_list = [((os.path.join(self.imgs_dir, 
                                   item.experiment, 
                                   "Plate" + str(item.plate), 

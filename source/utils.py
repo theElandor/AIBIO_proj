@@ -1,21 +1,18 @@
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import torch
+import yaml
+from tqdm import tqdm
 import torchvision.transforms.v2 as transforms
+import torch.nn as nn
 from prettytable import PrettyTable
 from wilds import get_dataset
-import torch, wandb
-import torch.nn.functional as F
-from tqdm import tqdm
-import numpy as np
 from typing import Callable, List, Tuple, Any
-import yaml, random
 from pathlib import Path
-import math
 from collections import namedtuple
-from source.vision_transformer import VisionTransformer
 from functools import partial
-import torch.nn as nn
+
+from source.vision_transformer import VisionTransformer
 from source.collate import *
 
 def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:
@@ -95,7 +92,7 @@ def info_nce_loss(features, device, temperature=0.15):
     labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
     labels = labels.to(device)
 
-    features = F.normalize(features, dim=1)
+    features = torch.nn.functional.normalize(features, dim=1)
 
     similarity_matrix = torch.matmul(features, features.T)
     assert similarity_matrix.shape == (
@@ -118,7 +115,7 @@ def info_nce_loss(features, device, temperature=0.15):
     labels = torch.zeros(logits.shape[0], dtype=torch.long).to(device)
 
     logits = logits / temperature
-    return F.cross_entropy(logits, labels)
+    return torch.nn.functional.cross_entropy(logits, labels)
 
 
 def load_net(netname: str, options={}) -> torch.nn.Module:
@@ -183,7 +180,7 @@ def load_loss(lossname: str) -> Callable:
     if lossname == "NCE":
         return info_nce_loss
     if lossname == "cross_entropy":
-        return F.cross_entropy
+        return torch.nn.functional.cross_entropy
     else:
         raise ValueError("Invalid lossname")
 
@@ -331,7 +328,7 @@ def validation(net, val_loader, device, loss_func, losser, epoch)-> Tuple[List[f
     with torch.no_grad():
         for x_batch, siRNA_batch, metadata in val_loader:  # Iterate through validation data
             # Compute loss using the provided 'losser' function
-            loss, accuracy_tuple = losser(device, (x_batch, siRNA_batch, metadata), net, loss_func)
+            loss, accuracy_tuple = losser(device, (x_batch[:,0,:,:,:], siRNA_batch, metadata), net, loss_func)
             if accuracy_tuple is None:
                 raise RuntimeError('You called a validation() function on a losser that doesn\'t output accuracy values!')
             
@@ -383,7 +380,7 @@ def vit_small(patch_size=16, **kwargs):
     Returns a small vision transformer. (Code taken from original repo)
     """
     model = VisionTransformer(
-        patch_size=patch_size, embed_dim=384*2, depth=12, num_heads=6, mlp_ratio=4,
+        patch_size=patch_size, in_chans=6, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
@@ -400,6 +397,10 @@ def load_dino_weights(model, pretrained_weights, checkpoint_key="student"):
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
         # remove `backbone.` prefix induced by multicrop wrapper
         state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
+        # ========= for 6 channels ===========
+        # do not load projection weights since the size are mismatching
+        state_dict.pop("patch_embed.proj.weight",None)
+        # ===================================
         msg = model.load_state_dict(state_dict, strict=False)
         print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
     else:

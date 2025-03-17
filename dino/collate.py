@@ -16,7 +16,7 @@ class DataAugmentationDINO(object):
                 [utils.Wrapper6C(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1))],
                 p=0.8
             ),
-            #utils.Wrapper6C(transforms.RandomGrayscale(p=0.2)),
+            utils.Wrapper6C(transforms.RandomGrayscale(p=0.2)),
         ])
         # normalize = transforms.Compose([
         #     transforms.ToTensor(),
@@ -33,8 +33,8 @@ class DataAugmentationDINO(object):
         self.global_transfo2 = transforms.Compose([
             transforms.RandomResizedCrop(224, scale=global_crops_scale),
             flip_and_color_jitter,
-            utils.GaussianBlur(0.1)
-            #utils.Wrapper6C(utils.Solarization(0.2)),
+            utils.GaussianBlur(0.1),
+            utils.Wrapper6C(transforms.RandomSolarize(128, p=0.2))
         ])
         # transformation for the local small crops
         self.local_crops_number = local_crops_number
