@@ -28,7 +28,6 @@ from bio_utils import load_dino_weights, get_samples_per_domain, get_batch_domai
 
 
 import numpy as np
-from PIL import Image
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -41,6 +40,7 @@ import utils
 import vision_transformer as vits
 from vision_transformer import DINOHead
 from dist_utils import *
+
 
 def init_wandb(dino_config):
     #assert wandb.Api().api_key, "the api key has not been set!\n"

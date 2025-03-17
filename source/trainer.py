@@ -41,50 +41,50 @@ class Norm_Trainer():
             config=self.config
         )
 
-    def train(self, dataset:Rxrx1, losser,log_accuracy = False):
+    #def train(self, dataset:Rxrx1, losser,log_accuracy = False):
+    def train(self, losser: callable):
         """
-    Trains a neural network model using the specified dataset and configurations.
+        Trains a neural network model using the specified dataset and configurations.
+        Reads most of the parameters from the config directly.
 
-    Args:
-        split_sizes (list): Proportions for splitting the dataset into train, validation, and test subsets.
-        dataset (Dataset): The dataset object containing the data and its subsets (train/val/test).
-        losser (callable): A custom function to compute the loss. It takes the device, batch data, model, 
-            and loss function as input and returns the computed loss.
+        Args:
+            losser (callable): A custom function to compute the loss. It takes the device, batch data, model, 
+                and loss function as input and returns the computed loss.
 
-    Attributes:
-        train_workers (int): Number of workers to use for the training data loader.
-        evaluation_workers (int): Number of workers to use for the validation data loader.
-        device (torch.device): The device (e.g., 'cuda' or 'cpu') on which training will run.
+        Attributes:
+            train_workers (int): Number of workers to use for the training data loader.
+            evaluation_workers (int): Number of workers to use for the validation data loader.
+            device (torch.device): The device (e.g., 'cuda' or 'cpu') on which training will run.
 
-    Data Loaders:
-        train_dataloader: DataLoader for the training subset, with batching and grouping logic.
-        val_loader: DataLoader for the validation subset, with batching and grouping logic.
+        Data Loaders:
+            train_dataloader: DataLoader for the training subset, with batching and grouping logic.
+            val_loader: DataLoader for the validation subset, with batching and grouping logic.
 
-    Model Training:
-        - Handles checkpoint loading if specified in the configuration (`load_checkpoint`).
-        - Iterates through specified epochs (`self.config['epochs']`) and trains the model in batches.
-        - Logs training loss values for every batch and stores them in `training_loss_values`.
-        - Saves the model at intervals specified by `self.config['model_save_freq']`.
-        - Runs validation at intervals specified by `self.config['evaluation_freq']`, appending validation 
-          loss values to `validation_loss_values`.
+        Model Training:
+            - Handles checkpoint loading if specified in the configuration (`load_checkpoint`).
+            - Iterates through specified epochs (`self.config['epochs']`) and trains the model in batches.
+            - Logs training loss values for every batch and stores them in `training_loss_values`.
+            - Saves the model at intervals specified by `self.config['model_save_freq']`.
+            - Runs validation at intervals specified by `self.config['evaluation_freq']`, appending validation 
+            loss values to `validation_loss_values`.
 
-    Returns:
-        tuple:
-            - training_loss_values (list): List of training loss values recorded for each batch.
-            - validation_loss_values (list): List of validation loss values recorded during validation.
+        Returns:
+            tuple:
+                - training_loss_values (list): List of training loss values recorded for each batch.
+                - validation_loss_values (list): List of validation loss values recorded during validation.
 
-    Raises:
-        ValueError: If required configurations (e.g., `epochs`, `batch_size`) are missing from `self.config`.
+        Raises:
+            ValueError: If required configurations (e.g., `epochs`, `batch_size`) are missing from `self.config`.
 
-    Notes:
-        - Uses `CombinatorialGrouper` to group data for training and validation.
-        - Supports multi-GPU training if `self.config['multiple_gpus']` is enabled.
-        - Data loaders use advanced prefetching and worker options for efficient data loading.
+        Notes:
+            - Uses `CombinatorialGrouper` to group data for training and validation.
+            - Supports multi-GPU training if `self.config['multiple_gpus']` is enabled.
+            - Data loaders use advanced prefetching and worker options for efficient data loading.
 
-    Example:
-        >>> trainer = Trainer(config, model, optimizer, loss_func)
-        >>> training_loss, validation_loss = trainer.train(split_sizes, dataset, custom_losser)
-    """
+        Example:
+            >>> trainer = Trainer(config, model, optimizer, loss_func)
+            >>> training_loss, validation_loss = trainer.train(losser)
+        """
         #============= Preparing dataset... ==================
         self.init_wandb()
 
@@ -92,23 +92,24 @@ class Norm_Trainer():
         evaluation_workers = self.config["evaluation_workers"]
         device = self.device
 
-        print('Creating the subsets of the dataset')
-        metadata = dataset.get_metadata()
+        train_dataset = Rxrx1(self.config['dataset_dir'],
+                        metadata_path=self.config['metadata_path'],
+                        subset=self.config["cell_type"], split="train")
         
-        train_indices = metadata.index[metadata.iloc[:, 3] == 'train'].tolist()
-        val_indices = metadata.index[metadata.iloc[:, 3] == 'val'].tolist()
-        test_indices = metadata.index[metadata.iloc[:, 3] == 'test'].tolist()
-
-        # Create subsets
-        train_dataset = Subset(dataset, train_indices)
-        val_dataset = Subset(dataset, val_indices)
-        test_dataset = Subset(dataset, test_indices)
+        # for now, try to train head using test set as the validation set
+        val_dataset = Rxrx1(self.config['dataset_dir'],
+                        metadata_path=self.config['metadata_path'],
+                        subset=self.config["cell_type"], split="test")
+        
+        # test_dataset = Rxrx1(self.config['dataset_dir'],
+        #                     metadata_path=self.config['metadata_path'], 
+        #                     subset=self.config["cell_type"], split="test")
 
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.config["batch_size"], shuffle=True,
-                                      num_workers=train_workers, drop_last=True, prefetch_factor=2, persistent_workers=True,collate_fn=self.collate)
+                                      num_workers=train_workers, drop_last=True, persistent_workers=True,collate_fn=self.collate)
         val_dataloader = DataLoader(val_dataset, batch_size=self.config["batch_size"], shuffle=True,
-                                    num_workers=evaluation_workers, drop_last=True, prefetch_factor=2,collate_fn=self.collate)
+                                    num_workers=evaluation_workers, drop_last=True, collate_fn=self.collate)
 
         #============= Loading full checkpoint or backbone + head ==================
         if self.config['load_checkpoint'] is not None:
@@ -144,7 +145,7 @@ class Norm_Trainer():
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
             self.net.train()
             for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):
-                loss, _ = losser(device, (x_batch, siRNA_batch, metadata), self.net, self.loss_func)
+                loss, _ = losser(device, (x_batch[:,0,:,:,:], siRNA_batch, metadata), self.net, self.loss_func)
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
@@ -172,7 +173,7 @@ class Norm_Trainer():
 
                 # Wandb time!
                 wandb.log({"val_loss": mean_loss})
-                if log_accuracy:
+                if self.config["log_accuracy"]:
                     wandb.log({"accuracy": accuracy})
 
             if (self.scheduler is not None):

@@ -1,12 +1,7 @@
 import torch
-import torch.nn as nn
-import torchvision.transforms.v2 as transforms
 import torchvision.transforms.v2.functional as F
 import math
-from typing import Tuple,List,Any
 from torchvision.io import decode_image
-import time
-from source.utils import min_max_scale
 
 def channelnorm_collate(batch): 
     '''
@@ -77,6 +72,4 @@ def tuple_channelnorm_collate(batch):
         norm_images.append(torch.stack([stacked_image_norm_1, stacked_image_norm_2], dim=0))
 
     norm_images = torch.stack(norm_images,dim=0)  #dimensionality: (batch_size,2,n_channels,w,h)
-    #OUTPUT SHAPES:
-    #norm images --> #TODO
-    return norm_images, sirna_ids, metadatas
+    return norm_images, torch.tensor(sirna_ids)[:,0].tolist(), metadatas
