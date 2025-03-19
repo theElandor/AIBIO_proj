@@ -145,7 +145,7 @@ class Norm_Trainer():
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
             self.net.train()
             for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):
-                loss, _ = losser(device, (x_batch[:,0,:,:,:], siRNA_batch, metadata), self.net, self.loss_func)
+                loss, _ = losser(device, (x_batch, siRNA_batch, metadata), self.net, self.loss_func)
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()

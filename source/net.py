@@ -67,7 +67,6 @@ class FcHead(nn.Module):
         super(FcHead, self).__init__()
         self.num_classes = num_classes
 
-        # for future work: this parameter could be inferred from the backbone
         self.fc = nn.Linear(embedding_size, self.num_classes)
 
     def forward(self, x):
@@ -117,7 +116,7 @@ class CellClassifier(nn.Module):
 
     def load_backbone_weights(self, config: dict, device: torch.cuda.device):
         assert 'backbone_weights' in config.keys(), "Please provide a valid checkpoint to load the backbone weights from."
-        load_weights(config['backbone_weights'], self.backbone, device)
+        load_weights(config['backbone_weights'], self.backbone, device, exclude_projection=False)
         print(f"Loaded the following backbone weights: {config['backbone_weights']}")
 
     def load_head_weights(self, config: dict, device: torch.cuda.device):

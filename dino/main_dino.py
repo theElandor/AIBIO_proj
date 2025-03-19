@@ -151,6 +151,7 @@ def get_args_parser():
     parser.add_argument("--use_original_code", default=True, type=utils.bool_flag, help="Whether to use original code.")
     parser.add_argument("--metadata_path", default=None, type=str, help="Path of the metadata to use.")
     parser.add_argument("--cell_type", default=None, type=str, help="Cell type to use.")
+    parser.add_argument("--acc_steps", default=1, type=int, help="Gradient accumulation steps to perform.") # B * steps = effective B
     return parser
 
 
@@ -393,7 +394,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
 
         # move images to gpu
         images = [im.cuda(non_blocking=True) for im in images]
-        # teacher and student forward passes + compute dino loss
+        # teacher and student forward passes + compute dino loss        
         with torch.cuda.amp.autocast(fp16_scaler is not None):
             teacher_output = teacher(images[:2])  # only the 2 global views pass through the teacher
             student_output = student(images)
@@ -404,41 +405,46 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
                 d1 = torch.tensor(get_batch_domains(metadata, mapping))
                 d2 = torch.tensor(get_batch_domains(metadata, mapping))
                 batch_domains = [d1,d2]
-                loss = dino_loss(student_output, teacher_output, epoch, batch_domains)
+                loss = dino_loss(student_output, teacher_output, epoch, batch_domains) / args.acc_steps
             # otherwise we just pass our own metadata and everything is done in the loss
             else:
-                loss = dino_loss(student_output, teacher_output, epoch, metadata)
+                loss = dino_loss(student_output, teacher_output, epoch, metadata) / args.acc_steps
             wandb.log({"train_loss":loss.item()})
 
         if not math.isfinite(loss.item()):
             print("Loss is {}, stopping training".format(loss.item()), force=True)
             sys.exit(1)
 
-        # student update
-        optimizer.zero_grad()
-        param_norms = None
+        # accumulate gradients at every step
         if fp16_scaler is None:
             loss.backward()
-            if args.clip_grad:
-                param_norms = utils.clip_gradients(student, args.clip_grad)
-            utils.cancel_gradients_last_layer(epoch, student,
-                                              args.freeze_last_layer)
-            optimizer.step()
         else:
-            fp16_scaler.scale(loss).backward()
-            if args.clip_grad:
-                fp16_scaler.unscale_(optimizer)  # unscale the gradients of optimizer's assigned params in-place
-                param_norms = utils.clip_gradients(student, args.clip_grad)
-            utils.cancel_gradients_last_layer(epoch, student,
-                                              args.freeze_last_layer)
-            fp16_scaler.step(optimizer)
-            fp16_scaler.update()
+            fp16_scaler.scale(loss).backward()            
+        # update student according to gradient accumulation
+        if (it+1) % args.acc_steps == 0:
+            param_norms = None
+            if fp16_scaler is None:
+                if args.clip_grad:
+                    param_norms = utils.clip_gradients(student, args.clip_grad)
+                utils.cancel_gradients_last_layer(epoch, student,
+                                                args.freeze_last_layer)
+                optimizer.step()
+                optimizer.zero_grad()
+            else:
+                if args.clip_grad:
+                    fp16_scaler.unscale_(optimizer)  # unscale the gradients of optimizer's assigned params in-place
+                    param_norms = utils.clip_gradients(student, args.clip_grad)
+                utils.cancel_gradients_last_layer(epoch, student,
+                                                args.freeze_last_layer)
+                fp16_scaler.step(optimizer)
+                fp16_scaler.update()
+                optimizer.zero_grad()
 
-        # EMA update for the teacher
-        with torch.no_grad():
-            m = momentum_schedule[it]  # momentum parameter
-            for param_q, param_k in zip(student.module.parameters(), teacher_without_ddp.parameters()):
-                param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
+            # EMA update for the teacher
+            with torch.no_grad():
+                m = momentum_schedule[it]  # momentum parameter
+                for param_q, param_k in zip(student.module.parameters(), teacher_without_ddp.parameters()):
+                    param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
 
         # logging
         torch.cuda.synchronize()

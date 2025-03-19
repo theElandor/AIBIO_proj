@@ -15,12 +15,12 @@ from functools import partial
 from source.vision_transformer import VisionTransformer
 from source.collate import *
 
-def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device) -> torch.utils.checkpoint:
+def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device, exclude_projection=True) -> torch.utils.checkpoint:
     """!Load only network weights from checkpoint."""
 
     # VisionTransformer module has its own custom loader
     if isinstance(net, VisionTransformer):
-        checkpoint = load_dino_weights(net, checkpoint_path)
+        checkpoint = load_dino_weights(net, checkpoint_path, checkpoint_key="student", exclude_projection=exclude_projection)
 
     # Load weights procedure for other models
     else:
@@ -240,8 +240,12 @@ def config_loader(config):
     assert 'collate_fun' in config, "Please provide a valid collate function."
     if config['collate_fun'] == 'channelnorm_collate':
         collate = channelnorm_collate
-    elif config['collate_fun'] == 'tuple_channelnorm_collate':
-        collate = tuple_channelnorm_collate
+    # these two collates are the same except that the second one
+    # does not load the second image
+    elif config['collate_fun'] == 'tuple_channelnorm_collate_dino':
+        collate = tuple_channelnorm_collate_dino
+    elif config['collate_fun'] == 'tuple_channelnorm_collate_head':
+        collate = tuple_channelnorm_collate_head
 
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
@@ -328,7 +332,7 @@ def validation(net, val_loader, device, loss_func, losser, epoch)-> Tuple[List[f
     with torch.no_grad():
         for x_batch, siRNA_batch, metadata in val_loader:  # Iterate through validation data
             # Compute loss using the provided 'losser' function
-            loss, accuracy_tuple = losser(device, (x_batch[:,0,:,:,:], siRNA_batch, metadata), net, loss_func)
+            loss, accuracy_tuple = losser(device, (x_batch, siRNA_batch, metadata), net, loss_func)
             if accuracy_tuple is None:
                 raise RuntimeError('You called a validation() function on a losser that doesn\'t output accuracy values!')
             
@@ -384,7 +388,7 @@ def vit_small(patch_size=16, **kwargs):
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
-def load_dino_weights(model, pretrained_weights, checkpoint_key="student"):
+def load_dino_weights(model, pretrained_weights, checkpoint_key="student", exclude_projection=True):
     """
     Function to load dino-vit weights. Taken from https://github.com/facebookresearch/dino/blob/main/utils.py
     """
@@ -398,8 +402,8 @@ def load_dino_weights(model, pretrained_weights, checkpoint_key="student"):
         # remove `backbone.` prefix induced by multicrop wrapper
         state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
         # ========= for 6 channels ===========
-        # do not load projection weights since the size are mismatching
-        state_dict.pop("patch_embed.proj.weight",None)
+        # do not load projection weights since the sizes are mismatching
+        if exclude_projection: state_dict.pop("patch_embed.proj.weight",None)
         # ===================================
         msg = model.load_state_dict(state_dict, strict=False)
         print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
