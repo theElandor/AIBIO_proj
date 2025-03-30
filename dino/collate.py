@@ -12,16 +12,12 @@ class DataAugmentationDINO(object):
     def __init__(self, global_crops_scale, local_crops_scale, local_crops_number):
         flip_and_color_jitter = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomApply(
-                [utils.Wrapper6C(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1))],
-                p=0.8
-            ),
-            utils.Wrapper6C(transforms.RandomGrayscale(p=0.2)),
+            #  transforms.RandomApply(
+            #      [utils.Wrapper6C(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1))],
+            #      p=0.8
+            #  ),
+            #utils.Wrapper6C(transforms.RandomGrayscale(p=0.2)),
         ])
-        # normalize = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        # ])
 
         # first global crop
         self.global_transfo1 = transforms.Compose([
@@ -34,7 +30,7 @@ class DataAugmentationDINO(object):
             transforms.RandomResizedCrop(224, scale=global_crops_scale),
             flip_and_color_jitter,
             utils.GaussianBlur(0.1),
-            utils.Wrapper6C(transforms.RandomSolarize(128, p=0.2))
+            # utils.Wrapper6C(transforms.RandomSolarize(128, p=0.2))
         ])
         # transformation for the local small crops
         self.local_crops_number = local_crops_number
@@ -75,8 +71,8 @@ def channelnorm_collate(batch):
 
         stacked_image = torch.cat([F.resize(decode_image(path),224) for path in path_tuple],dim=0).to(torch.float16) #stacking of the channels
         #getting the tuples out of the metadata
-        mean_tuple = eval(metadata_1[i][-2])
-        variance_tuple = eval(metadata_1[i][-1])
+        mean_tuple = [float(x) for x in metadata_1[i][-2].strip("()").split(",")]
+        variance_tuple = [float(x) for x in metadata_1[i][-1].strip("()").split(",")]
         
         std_tuple = tuple(math.sqrt(element) for element in variance_tuple)
         
@@ -117,22 +113,17 @@ def tuple_channelnorm_collate(batch):
 
         stacked_image_1 = torch.cat(decoded_images_1, dim=0)
         stacked_image_2 = torch.cat(decoded_images_2, dim=0)
-
-        mean_tuple_1 = eval(metadata_1[i][-2])
-        variance_tuple_1 = eval(metadata_1[i][-1])
-        std_tuple_1 = tuple(math.sqrt(x) for x in variance_tuple_1)
         
-        mean_tuple_2 = eval(metadata_2[i][-2])
-        variance_tuple_2 = eval(metadata_2[i][-1])
-        std_tuple_2 = tuple(math.sqrt(x) for x in variance_tuple_2)
+        mean_tuple_1 = [float(x) for x in metadata_1[i][-2].strip("()").split(",")]
+        std_tuple_1 = [math.sqrt(float(x)) for x in metadata_1[i][-1].strip("()").split(",")]        
+
+        mean_tuple_2 = [float(x) for x in metadata_2[i][-2].strip("()").split(",")]
+        std_tuple_2 = [math.sqrt(float(x)) for x in metadata_2[i][-1].strip("()").split(",")]
 
         m12 = torch.stack([torch.tensor(mean_tuple_1), torch.tensor(mean_tuple_2)], dim=0)
         s12 = torch.stack([torch.tensor(std_tuple_1), torch.tensor(std_tuple_2)], dim=0)
         means.append(m12)
         stds.append(s12)
-
-        # stacked_image_norm_1 = F.normalize(stacked_image_1.float(), mean=list(mean_tuple_1), std=list(std_tuple_1))
-        # stacked_image_norm_2 = F.normalize(stacked_image_2.float(), mean=list(mean_tuple_2), std=list(std_tuple_2))
 
         images.append(torch.stack([stacked_image_1, stacked_image_2], dim=0))
 
