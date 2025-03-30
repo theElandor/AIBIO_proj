@@ -13,7 +13,6 @@
 # limitations under the License.
 """
 Misc functions.
-
 Mostly copy-paste from torchvision references or other public repos like DETR:
 https://github.com/facebookresearch/detr/blob/master/util/misc.py
 """
@@ -464,6 +463,9 @@ def save_on_master(*args, **kwargs):
     if is_main_process():
         torch.save(*args, **kwargs)
 
+def save_single_gpu(*args, **kwargs):
+    torch.save(*args, **kwargs)
+
 
 def setup_for_distributed(is_master):
     """
@@ -499,7 +501,7 @@ def init_distributed_mode(args):
         print('Will run the code on one GPU.')
         args.rank, args.gpu, args.world_size = 0, 0, 1
         os.environ['MASTER_ADDR'] = '127.0.0.1'
-        os.environ['MASTER_PORT'] = '29504'
+        os.environ['MASTER_PORT'] = str(args.master_port)
     else:
         print('Does not support training without GPU.')
         sys.exit(1)

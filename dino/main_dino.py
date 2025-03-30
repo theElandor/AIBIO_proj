@@ -148,15 +148,14 @@ def get_args_parser():
     # ================== custom options ==============
     parser.add_argument("--load_pretrained", default=None, type=str, help="Specify weights paths to load them.")
     parser.add_argument("--multi_centering", default=False, type=utils.bool_flag, help="Whether to use multiple centers.")
-    parser.add_argument("--use_original_code", default=True, type=utils.bool_flag, help="Whether to use original code.")
     parser.add_argument("--metadata_path", default=None, type=str, help="Path of the metadata to use.")
     parser.add_argument("--cell_type", default=None, type=str, help="Cell type to use.")
-    parser.add_argument("--acc_steps", default=1, type=int, help="Gradient accumulation steps to perform.") # B * steps = effective B
+    parser.add_argument("--acc_steps", default=1, type=int, help="Gradient accumulation steps to perform.") # B * steps = effective B    
     return parser
 
 
 def train_dino(args):
-    utils.init_distributed_mode(args)
+    #utils.init_distributed_mode(args)
     utils.fix_random_seeds(args.seed)
     print("git:\n  {}\n".format(utils.get_sha()))
     print("\n".join("%s: %s" % (k, str(v)) for k, v in sorted(dict(vars(args)).items())))
@@ -164,16 +163,6 @@ def train_dino(args):
     cudnn.benchmark = True
 
     # ============ preparing data ... ============
-    
-    # df = pd.read_csv(args.metadata_path)
-    # df_train = df[df["dataset"] == "train"]
-    # if args.cell_type is not None:
-    #     df_train = df_train[df_train["cell_type"] == args.cell_type]
-        
-    # dataset = Rxrx1(args.data_path,
-    #                 dataframe=df_train,
-    #                 mode='tuple',
-    #                 transforms_=transform)
 
     df = pd.read_csv(args.metadata_path)
     dataset = Rxrx1(args.data_path,
@@ -182,22 +171,15 @@ def train_dino(args):
                     split='train',
                 )
 
-    sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
-    # data_loader = torch.utils.data.DataLoader(
-    #     dataset,
-    #     sampler=sampler,
-    #     batch_size=args.batch_size_per_gpu,
-    #     num_workers=args.num_workers,
-    #     pin_memory=True,
-    #     drop_last=True,
-    # )
     data_loader = torch.utils.data.DataLoader(
         dataset,
-        sampler=sampler,
+        #sampler=sampler,
+        shuffle=True,
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
         collate_fn = tuple_channelnorm_collate,
         pin_memory=True,
+        prefetch_factor=4,
         drop_last=True,
     )
     print(f"Data loaded: there are {len(dataset)} images.")
@@ -245,6 +227,7 @@ def train_dino(args):
     student, teacher = student.cuda(), teacher.cuda()
     # synchronize batch norms (if any)
     if utils.has_batchnorms(student):
+        print("Syncronizing batch norms....")
         student = nn.SyncBatchNorm.convert_sync_batchnorm(student)
         teacher = nn.SyncBatchNorm.convert_sync_batchnorm(teacher)
 
@@ -254,9 +237,10 @@ def train_dino(args):
     else:
         # teacher_without_ddp and teacher are the same thing
         teacher_without_ddp = teacher
-    student = nn.parallel.DistributedDataParallel(student, device_ids=[args.gpu])
+    # student = nn.parallel.DistributedDataParallel(student, device_ids=[args.gpu])
     # teacher and student start with the same weights
-    teacher_without_ddp.load_state_dict(student.module.state_dict())
+    #teacher_without_ddp.load_state_dict(student.module.state_dict())
+    teacher_without_ddp.load_state_dict(student.state_dict())
     # there is no backpropagation through the teacher, so no need for gradients
     for p in teacher.parameters():
         p.requires_grad = False
@@ -264,7 +248,7 @@ def train_dino(args):
 
     # ============ preparing loss ... ============
     examples_in_each_domain, mapping= get_samples_per_domain(args.metadata_path)
-    if args.use_original_code:
+    if args.multi_centering:
         number_of_domains = examples_in_each_domain.shape[0]
         dino_loss = DINOLossMultiCenter(
             args.out_dim,
@@ -287,7 +271,6 @@ def train_dino(args):
             args.teacher_temp,
             args.warmup_teacher_temp_epochs,
             args.epochs,
-            args.multi_centering
         ).cuda()
 
     # ============ preparing optimizer ... ============
@@ -337,7 +320,7 @@ def train_dino(args):
     print("Starting DINO training !")
     for epoch in range(start_epoch, args.epochs):
         print(f"Started epoch {epoch}", flush=True)
-        data_loader.sampler.set_epoch(epoch)
+#        data_loader.sampler.set_epoch(epoch)
 
         # ============ training one epoch of DINO ... ============
         train_stats = train_one_epoch(student, teacher, teacher_without_ddp, dino_loss,
@@ -355,14 +338,16 @@ def train_dino(args):
         }
         if fp16_scaler is not None:
             save_dict['fp16_scaler'] = fp16_scaler.state_dict()
-        utils.save_on_master(save_dict, os.path.join(args.output_dir, 'checkpoint.pth'))
+        #utils.save_on_master(save_dict, os.path.join(args.output_dir, 'checkpoint.pth'))
+        utils.save_single_gpu(save_dict, os.path.join(args.output_dir, 'checkpoint.pth'))
         if args.saveckp_freq and epoch % args.saveckp_freq == 0:
-            utils.save_on_master(save_dict, os.path.join(args.output_dir, f'checkpoint{epoch:04}.pth'))
+           # utils.save_on_master(save_dict, os.path.join(args.output_dir, f'checkpoint{epoch:04}.pth'))
+           utils.save_single_gpu(save_dict, os.path.join(args.output_dir, f'checkpoint{epoch:04}.pth'))
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      'epoch': epoch}
-        if utils.is_main_process():
-            with (Path(args.output_dir) / "log.txt").open("a") as f:
-                f.write(json.dumps(log_stats) + "\n")
+        #if utils.is_main_process():
+        with (Path(args.output_dir) / "log.txt").open("a") as f:
+            f.write(json.dumps(log_stats) + "\n")
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
@@ -401,7 +386,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             # if we are using the code from the original github repo,
             # the forward pass of the loss needs the indexes of the domains
             # found in the batch to compute the centering of the teacher output
-            if args.use_original_code:
+            if args.multi_centering:
                 d1 = torch.tensor(get_batch_domains(metadata, mapping))
                 d2 = torch.tensor(get_batch_domains(metadata, mapping))
                 batch_domains = [d1,d2]
@@ -441,9 +426,13 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
                 optimizer.zero_grad()
 
             # EMA update for the teacher
+            # with torch.no_grad():
+            #     m = momentum_schedule[it]  # momentum parameter
+            #     for param_q, param_k in zip(student.module.parameters(), teacher_without_ddp.parameters()):
+            #         param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
             with torch.no_grad():
                 m = momentum_schedule[it]  # momentum parameter
-                for param_q, param_k in zip(student.module.parameters(), teacher_without_ddp.parameters()):
+                for param_q, param_k in zip(student.parameters(), teacher_without_ddp.parameters()):
                     param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
 
         # logging
@@ -452,7 +441,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(wd=optimizer.param_groups[0]["weight_decay"])
     # gather the stats from all processes
-    metric_logger.synchronize_between_processes()
+    #metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -463,18 +452,14 @@ class DINOLoss(nn.Module):
     Always use this loss with multi_centering = False
     """
     def __init__(self, out_dim, ncrops, warmup_teacher_temp, teacher_temp,
-                 warmup_teacher_temp_epochs, nepochs,multi_centering,student_temp=0.1,
+                 warmup_teacher_temp_epochs, nepochs,student_temp=0.1,
                  center_momentum=0.9):
         super().__init__()
         self.student_temp = student_temp
         self.center_momentum = center_momentum
-        self.ncrops = ncrops
-        self.multi_centering = multi_centering
-        # ============= old (not working properly) custom centering ==============
-        self.offsets = {"HUVEC":0, "U2OS": 24, "RPE":29, "HEPG2":40}        
-        centers_number = 1 if not multi_centering else 51
+        self.ncrops = ncrops        
         # ============ temperature setup ================
-        self.register_buffer(f"center", torch.zeros(centers_number, out_dim))
+        self.register_buffer(f"center", torch.zeros(1, out_dim))
         # we apply a warm up for the teacher temperature because
         # a too high temperature makes the training instable at the beginning
         self.teacher_temp_schedule = np.concatenate((
@@ -489,20 +474,11 @@ class DINOLoss(nn.Module):
         """
         targets = None
         student_out = student_output / self.student_temp
-        student_out = student_out.chunk(self.ncrops)    
-        # ============= custom centering procedure =============
-        if self.multi_centering:
-            targets = [int(x.split("-")[1])+self.offsets[x.split("-")[0]]-1 for x in metadata[0][4]]
-            # targets is a list that can contain elements in range [0,50], since we have 51 experiments
-            teacher_centers = self.center[targets]
-            temp_centers = torch.cat((teacher_centers, teacher_centers), dim=0)        
-        # =====================================================
-        final_center = self.center if not self.multi_centering else temp_centers
+        student_out = student_out.chunk(self.ncrops)        
         # teacher centering and sharpening
         temp = self.teacher_temp_schedule[epoch]
-        teacher_out = F.softmax((teacher_output - final_center) / temp, dim=-1)
+        teacher_out = F.softmax((teacher_output - self.center) / temp, dim=-1)
         teacher_out = teacher_out.detach().chunk(2)
-
         total_loss = 0
         n_loss_terms = 0
         for iq, q in enumerate(teacher_out):
@@ -522,22 +498,10 @@ class DINOLoss(nn.Module):
         """
         Update center used for teacher output.
         """
-        if self.multi_centering:
-            BS = teacher_output.shape[0]//2
-            batch_center = torch.zeros_like(self.center)
-            # compute batch center (1 per experiment)
-            for i, t in enumerate(targets):
-                batch_center[t] += teacher_output[i]
-                batch_center[t] += teacher_output[i+BS]
-            dist.all_reduce(batch_center)
-            # fix batch center
-            samples_per_exp = (torch.bincount(torch.tensor(targets), minlength=51)*2).float().to(batch_center.device)
-            samples_per_exp[samples_per_exp == 0] = 1
-            batch_center = batch_center / (samples_per_exp.view(-1,1) * dist.get_world_size())
-        else:
-            batch_center = torch.sum(teacher_output, dim=0, keepdim=True)
-            dist.all_reduce(batch_center)
-            batch_center = batch_center / (len(teacher_output) * dist.get_world_size())
+        batch_center = torch.sum(teacher_output, dim=0, keepdim=True)
+        #dist.all_reduce(batch_center)
+        #batch_center = batch_center / (len(teacher_output) * dist.get_world_size())
+        batch_center = batch_center / (len(teacher_output))
         #EMA update (same for both cases)
         self.center = self.center * self.center_momentum + batch_center * (1 - self.center_momentum)
 

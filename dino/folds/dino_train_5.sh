@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH -e /homes/mlugli/output/out.txt
-#SBATCH -o /homes/mlugli/output/err.txt
-#SBATCH --job-name=acc_DINO
+#SBATCH -e /homes/mlugli/output/f5o.txt
+#SBATCH -o /homes/mlugli/output/f5e.txt
+#SBATCH --job-name=DINO_f5
 #SBATCH --account=ai4bio2024
 #SBATCH --partition=all_usr_prod
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=100G
+#SBATCH --mem=80G
 #SBATCH --time=24:00:00
-#SBATCH --gres=gpu:1 --constraint="gpu_RTX6000_24G|gpu_RTXA5000_24G|gpu_A40_48G"
+#SBATCH --gres=gpu:1
 
 source activate dinoenv
 
@@ -17,8 +17,8 @@ python3 /homes/mlugli/AIBIO_proj/dino/main_dino.py \
     --arch vit_small \
     --saveckp_freq 2\
     --data_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig \
-    --metadata_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig/metadata/meta.csv \
-    --output_dir /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/6c_4 \
+    --metadata_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig/metadatas/meta_5.csv \
+    --output_dir /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/folds/f5 \
     --load_pretrained /work/h2020deciderficarra_shared/rxrx1/checkpoints/OFFICIAL_ViT_pretrained/dino_deitsmall16_pretrain.pth \
     --warmup_teacher_temp_epochs 10 \
     --lr 5e-4 \
@@ -27,3 +27,4 @@ python3 /homes/mlugli/AIBIO_proj/dino/main_dino.py \
     --num_workers 16 \
     --acc_steps 8 \
     --out_dim 65536 \
+    --batch_size_per_gpu 64 \

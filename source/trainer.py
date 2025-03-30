@@ -40,8 +40,7 @@ class Norm_Trainer():
             name=self.config['run_name'],
             config=self.config
         )
-
-    #def train(self, dataset:Rxrx1, losser,log_accuracy = False):
+    
     def train(self, losser: callable):
         """
         Trains a neural network model using the specified dataset and configurations.
@@ -78,7 +77,6 @@ class Norm_Trainer():
 
         Notes:
             - Uses `CombinatorialGrouper` to group data for training and validation.
-            - Supports multi-GPU training if `self.config['multiple_gpus']` is enabled.
             - Data loaders use advanced prefetching and worker options for efficient data loading.
 
         Example:
@@ -96,20 +94,15 @@ class Norm_Trainer():
                         metadata_path=self.config['metadata_path'],
                         subset=self.config["cell_type"], split="train")
         
-        # for now, try to train head using test set as the validation set
         val_dataset = Rxrx1(self.config['dataset_dir'],
                         metadata_path=self.config['metadata_path'],
-                        subset=self.config["cell_type"], split="test")
-        
-        # test_dataset = Rxrx1(self.config['dataset_dir'],
-        #                     metadata_path=self.config['metadata_path'], 
-        #                     subset=self.config["cell_type"], split="test")
+                        subset=self.config["cell_type"], split="val")
 
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.config["batch_size"], shuffle=True,
-                                      num_workers=train_workers, drop_last=True, persistent_workers=True,collate_fn=self.collate)
+                                      num_workers=train_workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=True)
         val_dataloader = DataLoader(val_dataset, batch_size=self.config["batch_size"], shuffle=True,
-                                    num_workers=evaluation_workers, drop_last=True, collate_fn=self.collate)
+                                    num_workers=evaluation_workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=True)
 
         #============= Loading full checkpoint or backbone + head ==================
         if self.config['load_checkpoint'] is not None:
@@ -136,9 +129,6 @@ class Norm_Trainer():
             self.net.load_head_weights(self.config, self.device)
                 
         #============= Training Loop ==================
-        self.net.train()
-        if self.config['multiple_gpus']:
-            self.net = nn.DataParallel(self.net)
         print("Starting training...", flush=True)
         wandb.log({"lr": self.scheduler.get_last_lr()})
         for epoch in range(last_epoch, int(self.config['epochs'])):
