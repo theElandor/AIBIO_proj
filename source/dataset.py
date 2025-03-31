@@ -39,6 +39,8 @@ class Rxrx1(Dataset):
 
     
     def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all'):
+        self.split = split        
+        self.subset = subset
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
                                Not both!!!')
@@ -132,11 +134,12 @@ class Rxrx1(Dataset):
         #sampling a random sample that respects our constraints
         if not df_filtered.empty:
             random_index = df_filtered.sample(n=1).index[0]
+            img_paths_2, sirna_id_2, _ ,metadata_2 = df_filtered.iloc[random_index]
         else:
-            raise RuntimeError("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy")
-        
-        img_paths_2, sirna_id_2, _ ,metadata_2 = df_filtered.iloc[random_index]
-        
+            print("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy.")
+            print("Since this dataset is used only for head training and validation and the second sample is not used, I will replicate the first.")
+            img_paths_2, sirna_id_2, _ ,metadata_2 = img_paths_1, sirna_id_1, experiment_1, metadata_1
+
         image_paths = (img_paths_1,img_paths_2)
         sirna_ids = (sirna_id_1,sirna_id_2)
         metadatas = (metadata_1,metadata_2) 
