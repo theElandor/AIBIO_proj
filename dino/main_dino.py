@@ -26,7 +26,7 @@ from collate import *
 from hubconf import dino_vitb16
 from bio_utils import load_dino_weights, get_samples_per_domain, get_batch_domains
 
-
+import torch.optim.lr_scheduler as lr_scheduler
 import numpy as np
 import torch
 import torch.nn as nn
@@ -275,7 +275,7 @@ def train_dino(args):
     # ============ preparing optimizer ... ============
     params_groups = utils.get_params_groups(student)
     if args.optimizer == "adamw":
-        optimizer = torch.optim.AdamW(params_groups)  # to use with ViTs
+        optimizer = torch.optim.AdamW(params_groups, lr=args.lr)  # to use with ViTs
     elif args.optimizer == "sgd":
         optimizer = torch.optim.SGD(params_groups, lr=0, momentum=0.9)  # lr is set by scheduler
     elif args.optimizer == "lars":
@@ -286,18 +286,24 @@ def train_dino(args):
         fp16_scaler = torch.cuda.amp.GradScaler()
 
     # ============ init schedulers ... ============
-    lr_schedule = utils.cosine_scheduler(
-        #args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256.,  # linear scaling rule
-        args.lr * (args.batch_size_per_gpu * args.acc_steps) / 256., # scaled max learning rate
-        args.min_lr, # min learning rate
-        #args.epochs, len(data_loader),
-        args.epochs, len(data_loader) // args.acc_steps, # effective data loader size
-        warmup_epochs=args.warmup_epochs,
-    )
+
+    # custom scheduling, linear warmup for 10 epochs then cosine annealing,
+    # with 8 (by default, can be changed) accumulation steps to increase the effective batch size.
+    # Basically these optimizers work AS IF the batch size was args.batch_size_per_gpu * args.acc_steps
+    # This means that in the training loop, we need to call the steps only every args.acc_steps
+    total_iterations = (args.epochs * len(data_loader)) // args.acc_steps
+    warmup_iterations = (args.warmup_epochs * len(data_loader)) // args.acc_steps
+    def warmup_lambda(iteration):
+        if iteration < warmup_iterations:
+            return float(iteration) / float(max(1, warmup_iterations))
+        else:
+            return 1.0
+    lr_schedule_warmup = lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup_lambda)
+    lr_schedule_cosine = lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_iterations - warmup_iterations, eta_min=args.min_lr)
+
     wd_schedule = utils.cosine_scheduler(
         args.weight_decay,
         args.weight_decay_end,
-        #args.epochs, len(data_loader),
         args.epochs, len(data_loader) // args.acc_steps,
     )
     # momentum parameter is increased to 1. during training with a cosine schedule
@@ -326,7 +332,7 @@ def train_dino(args):
 
         # ============ training one epoch of DINO ... ============
         train_stats = train_one_epoch(student, teacher, teacher_without_ddp, dino_loss,
-            data_loader, optimizer, lr_schedule, wd_schedule, momentum_schedule,
+            data_loader, optimizer, lr_schedule_warmup, lr_schedule_cosine, warmup_iterations, wd_schedule, momentum_schedule,
             epoch, fp16_scaler, mapping, args)
 
         # ============ writing logs ... ============
@@ -356,18 +362,15 @@ def train_dino(args):
 
 
 def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loader,
-                    optimizer, lr_schedule, wd_schedule, momentum_schedule,epoch,
+                    optimizer, lr_schedule_warmup,lr_schedule_cosine,warmup_iterations,wd_schedule, momentum_schedule,epoch,
                     fp16_scaler, mapping, args):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
     for it, (images, _,metadata) in enumerate(metric_logger.log_every(data_loader, 10, header)):
         # global training iteration, not considering gradient accumulation
-        it = len(data_loader) * epoch + it  
-        for i, param_group in enumerate(optimizer.param_groups):
-            param_group["lr"] = lr_schedule[it // args.acc_steps]
-            wandb.log({"lr":float(lr_schedule[it // args.acc_steps])})
-            if i == 0:  # only the first group is regularized
-                param_group["weight_decay"] = wd_schedule[it // args.acc_steps]
+        it = len(data_loader) * epoch + it
+        # update weight decay with original schedule
+        optimizer.param_groups[0]["weight_decay"] = wd_schedule[it // args.acc_steps]
 
         # move images to gpu
         images = [im.cuda(non_blocking=True) for im in images]
@@ -393,12 +396,12 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             print("Loss is {}, stopping training".format(loss.item()), force=True)
             sys.exit(1)
 
-        # accumulate gradients at every step
+        # =============== Gradient accumulation =================
         if fp16_scaler is None:
             loss.backward()
         else:
             fp16_scaler.scale(loss).backward()
-        # update student according to gradient accumulation
+        # =============== Update student (every acc_steps) =========================
         if (it+1) % args.acc_steps == 0:
             param_norms = None
             if fp16_scaler is None:
@@ -417,7 +420,14 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
                 fp16_scaler.step(optimizer)
                 fp16_scaler.update()
                 optimizer.zero_grad()
-
+            # ============== Update learning rate =====================
+            if (it // args.acc_steps) < warmup_iterations:
+                lr_schedule_warmup.step()
+                wandb.log({"lr":float(lr_schedule_warmup.get_lr()[0])})
+            else:
+                lr_schedule_cosine.step()
+                wandb.log({"lr":float(lr_schedule_cosine.get_lr()[0])})
+            # =============== Update momentum + EMA =========================
             # EMA update for the teacher
             with torch.no_grad():
                 m = momentum_schedule[it // args.acc_steps]  # momentum parameter

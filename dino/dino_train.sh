@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH -e /homes/mlugli/output/6c_6_e.txt
-#SBATCH -o /homes/mlugli/output/6c_6_o.txt
-#SBATCH --job-name=DINO_fixedMomentum
+#SBATCH -e /homes/mlugli/output/6c_7_e.txt
+#SBATCH -o /homes/mlugli/output/6c_7_o.txt
+#SBATCH --job-name=DINO_annealing
 #SBATCH --account=ai4bio2024
 #SBATCH --partition=all_usr_prod
 #SBATCH --nodes=1
@@ -18,7 +18,7 @@ python3 /homes/mlugli/AIBIO_proj/dino/main_dino.py \
     --saveckp_freq 2\
     --data_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig \
     --metadata_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig/metadatas/meta_0.csv \
-    --output_dir /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/6c_6 \
+    --output_dir /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/6c_7 \
     --load_pretrained /work/h2020deciderficarra_shared/rxrx1/checkpoints/OFFICIAL_ViT_pretrained/dino_deitsmall16_pretrain.pth \
     --warmup_teacher_temp_epochs 10 \
     --lr 5e-4 \
