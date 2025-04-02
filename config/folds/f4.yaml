@@ -1,6 +1,6 @@
 # MODEL
 backbone: vit_small
-backbone_weights: /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/folds/f4/checkpoint0098.pth
+backbone_weights: /work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/folds/f4/checkpoint0086.pth
 freeze_backbone: True
 
 head: fc_head

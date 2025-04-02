@@ -245,7 +245,6 @@ def train_dino(args):
     for p in teacher.parameters():
         p.requires_grad = False
     print(f"Student and Teacher are built: they are both {args.arch} network.")
-
     # ============ preparing loss ... ============
     examples_in_each_domain, mapping= get_samples_per_domain(args.metadata_path)
     if args.multi_centering:
@@ -288,19 +287,22 @@ def train_dino(args):
 
     # ============ init schedulers ... ============
     lr_schedule = utils.cosine_scheduler(
-        args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256.,  # linear scaling rule
-        args.min_lr,
-        args.epochs, len(data_loader),
+        #args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256.,  # linear scaling rule
+        args.lr * (args.batch_size_per_gpu * args.acc_steps) / 256., # scaled max learning rate
+        args.min_lr, # min learning rate
+        #args.epochs, len(data_loader),
+        args.epochs, len(data_loader) // args.acc_steps, # effective data loader size
         warmup_epochs=args.warmup_epochs,
     )
     wd_schedule = utils.cosine_scheduler(
         args.weight_decay,
         args.weight_decay_end,
-        args.epochs, len(data_loader),
+        #args.epochs, len(data_loader),
+        args.epochs, len(data_loader) // args.acc_steps,
     )
     # momentum parameter is increased to 1. during training with a cosine schedule
     momentum_schedule = utils.cosine_scheduler(args.momentum_teacher, 1,
-                                               args.epochs, len(data_loader))
+                                               args.epochs, len(data_loader) // args.acc_steps,)
     print(f"Loss, optimizer and schedulers ready.")
 
     # ============ optionally resume training ... ============
@@ -338,7 +340,7 @@ def train_dino(args):
         }
         if fp16_scaler is not None:
             save_dict['fp16_scaler'] = fp16_scaler.state_dict()
-        #utils.save_on_master(save_dict, os.path.join(args.output_dir, 'checkpoint.pth'))
+        #utils.save_on_master(save_dict, os.path.join(args.output_dir, 'checkpoint.pth')
         utils.save_single_gpu(save_dict, os.path.join(args.output_dir, 'checkpoint.pth'))
         if args.saveckp_freq and epoch % args.saveckp_freq == 0:
            # utils.save_on_master(save_dict, os.path.join(args.output_dir, f'checkpoint{epoch:04}.pth'))
@@ -359,27 +361,17 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
     for it, (images, _,metadata) in enumerate(metric_logger.log_every(data_loader, 10, header)):
-        # update weight decay and learning rate according to their schedule
-        # ============ TUPLE MODE explanation ==========
-        # when the dataset is in tuple mode, the first two views
-        # in images are the global views, coming from image A in batch (experiment) X and treatment C.
-        # The last 8 images are the local views, coming from image B in batch (experiment) Y and treatment C.
-        # metadata[0] and metadata[1] are the metadata of the first and the second image respectively.
-        # This tecnique is called Cross Batch (CB) learning.
-        # When in default mode, the 10 images are coming from the same image A.
-        # This means that the metadata should only have 1 element.
-        # WARNING: don't use sirna here (the _ in the for loop), as I still
-        # have not fixed after the last dataset update.
-        #==============================================
-        it = len(data_loader) * epoch + it  # global training iteration
+        # global training iteration, not considering gradient accumulation
+        it = len(data_loader) * epoch + it  
         for i, param_group in enumerate(optimizer.param_groups):
-            param_group["lr"] = lr_schedule[it]
+            param_group["lr"] = lr_schedule[it // args.acc_steps]
+            wandb.log({"lr":float(lr_schedule[it // args.acc_steps])})
             if i == 0:  # only the first group is regularized
-                param_group["weight_decay"] = wd_schedule[it]
+                param_group["weight_decay"] = wd_schedule[it // args.acc_steps]
 
         # move images to gpu
         images = [im.cuda(non_blocking=True) for im in images]
-        # teacher and student forward passes + compute dino loss        
+        # teacher and student forward passes + compute dino loss
         with torch.cuda.amp.autocast(fp16_scaler is not None):
             teacher_output = teacher(images[:2])  # only the 2 global views pass through the teacher
             student_output = student(images)
@@ -394,6 +386,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             # otherwise we just pass our own metadata and everything is done in the loss
             else:
                 loss = dino_loss(student_output, teacher_output, epoch, metadata) / args.acc_steps
+
             wandb.log({"train_loss":loss.item()})
 
         if not math.isfinite(loss.item()):
@@ -404,7 +397,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
         if fp16_scaler is None:
             loss.backward()
         else:
-            fp16_scaler.scale(loss).backward()            
+            fp16_scaler.scale(loss).backward()
         # update student according to gradient accumulation
         if (it+1) % args.acc_steps == 0:
             param_norms = None
@@ -426,12 +419,8 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
                 optimizer.zero_grad()
 
             # EMA update for the teacher
-            # with torch.no_grad():
-            #     m = momentum_schedule[it]  # momentum parameter
-            #     for param_q, param_k in zip(student.module.parameters(), teacher_without_ddp.parameters()):
-            #         param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
             with torch.no_grad():
-                m = momentum_schedule[it]  # momentum parameter
+                m = momentum_schedule[it // args.acc_steps]  # momentum parameter
                 for param_q, param_k in zip(student.parameters(), teacher_without_ddp.parameters()):
                     param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
 
