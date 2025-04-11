@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from source.utils import load_net, load_weights, tuple_channelnorm_collate
+from source.utils import load_net, load_weights
 import torch
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 import seaborn as sb
 import umap
+import collate
 
 BS = 64
 net = load_net("vit_small")
@@ -18,14 +19,14 @@ device = "cuda:0"
 #checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/cross_batch_1/checkpoint0030.pth"
 #checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/custom_centering_1/checkpoint0075.pth"
 #checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/custom_centering_2/checkpoint0095.pth"
-checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/6c_1/checkpoint0098.pth"
+checkpoint = "/work/h2020deciderficarra_shared/rxrx1/checkpoints/dino/6c_9/checkpoint0068.pth"
 load_weights(checkpoint, net, device, exclude_projection=False)
 train_dataset = Rxrx1("/work/h2020deciderficarra_shared/rxrx1/rxrx1_orig",
-                metadata_path="/work/h2020deciderficarra_shared/rxrx1/rxrx1_orig/metadata/meta.csv",
-                subset="huvec", split="test")
+                metadata_path="/work/h2020deciderficarra_shared/rxrx1/rxrx1_orig/metadatas/meta_0.csv",
+                subset="huvec", split="train")
 
 train_dataloader = DataLoader(train_dataset, batch_size=BS, shuffle=True,
-                                      num_workers=4, drop_last=True, persistent_workers=True,collate_fn=tuple_channelnorm_collate)
+                              num_workers=1, drop_last=True, collate_fn=collate.tuple_channelnorm_collate_head)
 embeddings = []
 plates = [] # 5
 experiments = [] # 4
