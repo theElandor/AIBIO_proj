@@ -70,15 +70,9 @@ class Wrapper6C:
         """
         if tensor.shape[1] != 6:
             raise ValueError("Input tensor must have 6 channels")
-        
-        # Split the 6-channel tensor into two 3-channel tensors
-        tensor_1 = tensor[:, :3, :, :]  # First 3 channels
-        tensor_2 = tensor[:, 3:, :, :]  # Last 3 channels
-
-        # Apply the transformation to both tensors
+        tensor_1, tensor_2 = torch.split(tensor, 3, dim=1)
         tensor_1 = self.transform(tensor_1)
         tensor_2 = self.transform(tensor_2)
-        
         # Concatenate the two transformed parts back together
         return torch.cat((tensor_1, tensor_2), dim=1)
 

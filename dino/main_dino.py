@@ -26,7 +26,7 @@ from collate import *
 from hubconf import dino_vitb16
 from bio_utils import load_dino_weights, get_samples_per_domain, get_batch_domains
 
-
+import torch.optim.lr_scheduler as lr_scheduler
 import numpy as np
 import torch
 import torch.nn as nn
@@ -89,7 +89,7 @@ def get_args_parser():
     parser.add_argument('--teacher_temp', default=0.04, type=float, help="""Final value (after linear warmup)
         of the teacher temperature. For most experiments, anything above 0.07 is unstable. We recommend
         starting with the default value of 0.04 and increase this slightly if needed.""")
-    parser.add_argument('--warmup_teacher_temp_epochs', default=0, type=int,
+    parser.add_argument('--warmup_teacher_temp_epochs', default=30, type=int,
         help='Number of warmup epochs for the teacher temperature (Default: 30).')
 
     # Training/Optimization parameters
@@ -114,7 +114,7 @@ def get_args_parser():
     parser.add_argument("--lr", default=0.0005, type=float, help="""Learning rate at the end of
         linear warmup (highest LR used during training). The learning rate is linearly scaled
         with the batch size, and specified here for a reference batch size of 256.""")
-    parser.add_argument("--warmup_epochs", default=10, type=int,
+    parser.add_argument("--warmup_epochs", default=20, type=int,
         help="Number of epochs for the linear learning-rate warm up.")
     parser.add_argument('--min_lr', type=float, default=1e-6, help="""Target LR at the
         end of optimization. We use a cosine LR schedule with linear warmup.""")
@@ -146,11 +146,16 @@ def get_args_parser():
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
 
     # ================== custom options ==============
-    parser.add_argument("--load_pretrained", default=None, type=str, help="Specify weights paths to load them.")
-    parser.add_argument("--multi_centering", default=False, type=utils.bool_flag, help="Whether to use multiple centers.")
+    parser.add_argument("--load_pretrained", default=None, type=str, help="Specify weights paths to load them.")    
     parser.add_argument("--metadata_path", default=None, type=str, help="Path of the metadata to use.")
     parser.add_argument("--cell_type", default=None, type=str, help="Cell type to use.")
     parser.add_argument("--acc_steps", default=1, type=int, help="Gradient accumulation steps to perform.") # B * steps = effective B    
+    parser.add_argument("--easy_task", default=False, type=bool, help="If True, uses easy augmentations.") # B * steps = effective B    
+    # ================== new loss options ==============
+    parser.add_argument("--custom_loss", default=False, type=utils.bool_flag, help="Whether to use CDCL loss function.")
+    parser.add_argument("--multi_center_training", default=False, type=utils.bool_flag, help="Whether to use CDCL loss function.")
+    parser.add_argument("--barlow_loss", default=False, type=utils.bool_flag, help="Whether to use Barlow loss.")
+    parser.add_argument("--barlow_loss_weight", default=0.2, type=float, help="Barlow loss weight")
     return parser
 
 
@@ -171,13 +176,14 @@ def train_dino(args):
                     split='train',
                 )
 
+    collate = tuple_channelnorm_collate if not args.easy_task else tuple_channelnorm_collate_easy
     data_loader = torch.utils.data.DataLoader(
         dataset,
         #sampler=sampler,
         shuffle=True,
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
-        collate_fn = tuple_channelnorm_collate,
+        collate_fn = collate,
         pin_memory=True,
         prefetch_factor=4,
         drop_last=True,
@@ -247,21 +253,24 @@ def train_dino(args):
     print(f"Student and Teacher are built: they are both {args.arch} network.")
     # ============ preparing loss ... ============
     examples_in_each_domain, mapping= get_samples_per_domain(args.metadata_path)
-    if args.multi_centering:
+    if args.custom_loss:
         number_of_domains = examples_in_each_domain.shape[0]
         dino_loss = DINOLossMultiCenter(
             args.out_dim,
-            True,
-            args.local_crops_number + 2,  # total number of crops = 2 global crops + local_crops_number
+            args.multi_center_training, # multi-center training
+            args.local_crops_number + 2,
             args.warmup_teacher_temp,
             args.teacher_temp,
             args.warmup_teacher_temp_epochs,
             args.epochs,
             num_domains=number_of_domains,
             examples_in_each_domain=examples_in_each_domain,
-            device_id=args.gpu,
+            device_id="0",
             only_cross_domain=False, # still need to understand what is this
-        )
+            dino_loss=True,
+            barlow_loss=args.barlow_loss,
+            barlow_loss_weight=args.barlow_loss_weight,
+        ).cuda()
     else:
         dino_loss = DINOLoss(
             args.out_dim,
@@ -275,7 +284,7 @@ def train_dino(args):
     # ============ preparing optimizer ... ============
     params_groups = utils.get_params_groups(student)
     if args.optimizer == "adamw":
-        optimizer = torch.optim.AdamW(params_groups)  # to use with ViTs
+        optimizer = torch.optim.AdamW(params_groups, lr=args.lr)  # to use with ViTs
     elif args.optimizer == "sgd":
         optimizer = torch.optim.SGD(params_groups, lr=0, momentum=0.9)  # lr is set by scheduler
     elif args.optimizer == "lars":
@@ -286,18 +295,24 @@ def train_dino(args):
         fp16_scaler = torch.cuda.amp.GradScaler()
 
     # ============ init schedulers ... ============
-    lr_schedule = utils.cosine_scheduler(
-        #args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256.,  # linear scaling rule
-        args.lr * (args.batch_size_per_gpu * args.acc_steps) / 256., # scaled max learning rate
-        args.min_lr, # min learning rate
-        #args.epochs, len(data_loader),
-        args.epochs, len(data_loader) // args.acc_steps, # effective data loader size
-        warmup_epochs=args.warmup_epochs,
-    )
+
+    # custom scheduling, linear warmup for 10 epochs then cosine annealing,
+    # with 8 (by default, can be changed) accumulation steps to increase the effective batch size.
+    # Basically these optimizers work AS IF the batch size was args.batch_size_per_gpu * args.acc_steps
+    # This means that in the training loop, we need to call the steps only every args.acc_steps
+    total_iterations = (args.epochs * len(data_loader)) // args.acc_steps
+    warmup_iterations = (args.warmup_epochs * len(data_loader)) // args.acc_steps
+    def warmup_lambda(iteration):
+        if iteration < warmup_iterations:
+            return float(iteration) / float(max(1, warmup_iterations))
+        else:
+            return 1.0
+    lr_schedule_warmup = lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup_lambda)
+    lr_schedule_cosine = lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_iterations - warmup_iterations, eta_min=args.min_lr)
+
     wd_schedule = utils.cosine_scheduler(
         args.weight_decay,
         args.weight_decay_end,
-        #args.epochs, len(data_loader),
         args.epochs, len(data_loader) // args.acc_steps,
     )
     # momentum parameter is increased to 1. during training with a cosine schedule
@@ -326,7 +341,7 @@ def train_dino(args):
 
         # ============ training one epoch of DINO ... ============
         train_stats = train_one_epoch(student, teacher, teacher_without_ddp, dino_loss,
-            data_loader, optimizer, lr_schedule, wd_schedule, momentum_schedule,
+            data_loader, optimizer, lr_schedule_warmup, lr_schedule_cosine, warmup_iterations, wd_schedule, momentum_schedule,
             epoch, fp16_scaler, mapping, args)
 
         # ============ writing logs ... ============
@@ -356,18 +371,15 @@ def train_dino(args):
 
 
 def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loader,
-                    optimizer, lr_schedule, wd_schedule, momentum_schedule,epoch,
+                    optimizer, lr_schedule_warmup,lr_schedule_cosine,warmup_iterations,wd_schedule, momentum_schedule,epoch,
                     fp16_scaler, mapping, args):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
     for it, (images, _,metadata) in enumerate(metric_logger.log_every(data_loader, 10, header)):
         # global training iteration, not considering gradient accumulation
-        it = len(data_loader) * epoch + it  
-        for i, param_group in enumerate(optimizer.param_groups):
-            param_group["lr"] = lr_schedule[it // args.acc_steps]
-            wandb.log({"lr":float(lr_schedule[it // args.acc_steps])})
-            if i == 0:  # only the first group is regularized
-                param_group["weight_decay"] = wd_schedule[it // args.acc_steps]
+        it = len(data_loader) * epoch + it
+        # update weight decay with original schedule
+        optimizer.param_groups[0]["weight_decay"] = wd_schedule[it // args.acc_steps]
 
         # move images to gpu
         images = [im.cuda(non_blocking=True) for im in images]
@@ -378,27 +390,32 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             # if we are using the code from the original github repo,
             # the forward pass of the loss needs the indexes of the domains
             # found in the batch to compute the centering of the teacher output
-            if args.multi_centering:
+            if args.custom_loss:
                 d1 = torch.tensor(get_batch_domains(metadata, mapping))
                 d2 = torch.tensor(get_batch_domains(metadata, mapping))
                 batch_domains = [d1,d2]
-                loss = dino_loss(student_output, teacher_output, epoch, batch_domains) / args.acc_steps
+                loss, d_loss, b_loss = dino_loss(student_output, teacher_output, epoch, batch_domains)
+                loss, d_loss, b_loss = loss/args.acc_steps, d_loss/args.acc_steps, b_loss/args.acc_steps
+
             # otherwise we just pass our own metadata and everything is done in the loss
             else:
                 loss = dino_loss(student_output, teacher_output, epoch, metadata) / args.acc_steps
 
             wandb.log({"train_loss":loss.item()})
+            if args.custom_loss:
+                wandb.log({"barlow_loss":b_loss.item()})
+                wandb.log({"dino_loss":d_loss.item()})
 
         if not math.isfinite(loss.item()):
             print("Loss is {}, stopping training".format(loss.item()), force=True)
             sys.exit(1)
 
-        # accumulate gradients at every step
+        # =============== Gradient accumulation =================
         if fp16_scaler is None:
             loss.backward()
         else:
             fp16_scaler.scale(loss).backward()
-        # update student according to gradient accumulation
+        # =============== Update student (every acc_steps) =========================
         if (it+1) % args.acc_steps == 0:
             param_norms = None
             if fp16_scaler is None:
@@ -417,10 +434,18 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
                 fp16_scaler.step(optimizer)
                 fp16_scaler.update()
                 optimizer.zero_grad()
-
+            # ============== Update learning rate =====================
+            if (it // args.acc_steps) < warmup_iterations:
+                lr_schedule_warmup.step()
+                wandb.log({"lr":float(lr_schedule_warmup.get_lr()[0])})
+            else:
+                lr_schedule_cosine.step()
+                wandb.log({"lr":float(lr_schedule_cosine.get_lr()[0])})
+            # =============== Update momentum + EMA =========================
             # EMA update for the teacher
             with torch.no_grad():
                 m = momentum_schedule[it // args.acc_steps]  # momentum parameter
+                wandb.log({"teacher_momentum":float(m)})
                 for param_q, param_k in zip(student.parameters(), teacher_without_ddp.parameters()):
                     param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
 
@@ -438,7 +463,6 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
 class DINOLoss(nn.Module):
     """Original dino loss with an attempt of making it work with multiple centers.
     There is somehting wrong with the custom centering procedure, so it is not working properly.
-    Always use this loss with multi_centering = False
     """
     def __init__(self, out_dim, ncrops, warmup_teacher_temp, teacher_temp,
                  warmup_teacher_temp_epochs, nepochs,student_temp=0.1,
@@ -446,7 +470,7 @@ class DINOLoss(nn.Module):
         super().__init__()
         self.student_temp = student_temp
         self.center_momentum = center_momentum
-        self.ncrops = ncrops        
+        self.ncrops = ncrops
         # ============ temperature setup ================
         self.register_buffer(f"center", torch.zeros(1, out_dim))
         # we apply a warm up for the teacher temperature because
@@ -483,7 +507,7 @@ class DINOLoss(nn.Module):
         return total_loss
 
     @torch.no_grad()
-    def update_center(self, teacher_output, targets=None):
+    def update_center(self, teacher_output):
         """
         Update center used for teacher output.
         """
@@ -583,7 +607,7 @@ class DINOLossMultiCenter(nn.Module):
                 dist_teacher_centered   = dist_gather(teacher_centered[i_t], cat_dim=-1)
                 synchronize() 
                 dist_student_out = dist_gather(student_out[i_s], cat_dim=-1)
-                synchronize() 
+                synchronize()
             else:
                 dist_teacher_centered = teacher_centered[i_t]
                 dist_student_out = student_out[i_s]
@@ -596,11 +620,11 @@ class DINOLossMultiCenter(nn.Module):
             c.div_(batch_size)
             
             self.iter_loss_component += 1 
-            if self.iter % 50 == 0  and is_rank0():
+            # if self.iter % 50 == 0  and is_rank0():
                 
-                diag = torch.diagonal(c, 0).clone().detach().cpu().numpy()
-                wandb.log({f'barllow_diag-{self.iter_loss_component}-rank_{torch.cuda.current_device()}': diag}, 
-                          step=self.iter)                        
+            #     diag = torch.diagonal(c, 0).clone().detach().cpu().numpy()
+            #     # wandb.log({f'barllow_diag-{self.iter_loss_component}-rank_{torch.cuda.current_device()}': diag}, 
+            #     #           step=self.iter)                        
 
             on_diag  = torch.diagonal(c).add_(-1).pow_(2).mean()
             off_diag = self.off_diagonal(c).pow_(2).mean()
@@ -620,8 +644,8 @@ class DINOLossMultiCenter(nn.Module):
             if self.iter % 50 == 0  and is_rank0():
 
                 diag = torch.diagonal(c, 0).clone().detach().cpu().numpy()
-                wandb.log({f'barllow_diag-{self.iter_loss_component}-rank_{torch.cuda.current_device()}': diag}, 
-                          step=self.iter)                        
+                # wandb.log({f'barllow_diag-{self.iter_loss_component}-rank_{torch.cuda.current_device()}': diag}, 
+                #           step=self.iter)                        
 
             on_diag = torch.diagonal(c).add_(-1).pow_(2).mean()
             off_diag = self.off_diagonal(c).pow_(2).mean()
@@ -651,8 +675,8 @@ class DINOLossMultiCenter(nn.Module):
         
         batch_size   = student_out[0].shape[0]
         batch_size   = sum(dist_gather(batch_size))
-        synchronize()  
-        
+        if ddp_is_on():
+            synchronize()
         barlow_loss  = 0
         dino_loss    = 0
         
@@ -680,17 +704,12 @@ class DINOLossMultiCenter(nn.Module):
                     barlow_loss += self.calculate_barlow_loss(teacher_centered,student_out,
                                                          i_t,i_s,batch_size,
                                                               distribute_before_batch_norm=self.barlow_loss_batch_com)
-                
-                    
-               
         if self.dino_loss:
             dino_loss  /= n_loss_terms 
             dino_loss  /= self.dino_loss_scaling
         if self.barlow_loss:
             barlow_loss /= n_loss_terms
             barlow_loss /= self.barlow_scaling_factor
-        
-        
         if self.barlow_loss and self.dino_loss:
             total_loss   = dino_loss*(1.0-self.barlow_loss_weight)+barlow_loss*(self.barlow_loss_weight) #Change back to this
         elif self.barlow_loss:
@@ -709,18 +728,15 @@ class DINOLossMultiCenter(nn.Module):
             else:
                 self.update_center(teacher_output)
         
-        if self.iter % 10 == 0  and is_rank0():
-            wandb.log({'barlow_loss': barlow_loss, 'dino_loss': dino_loss}, 
-                            step=self.iter)
-        if self.iter % 50 == 0  and is_rank0():
-            for cent in range(self.center.shape[0]):
+        # if self.iter % 10 == 0  and is_rank0():
+        # wandb.log({'barlow_loss': barlow_loss, 'dino_loss': dino_loss})
+        # if self.iter % 50 == 0  and is_rank0():
+        #     for cent in range(self.center.shape[0]):
                 
-                out = self.center[cent,:].clone().detach().cpu().numpy()
-                wandb.log({f'centering_vector_domain-{cent}-rank_{torch.cuda.current_device()}': out}, 
-                          step=self.iter)                
-
-        
-        return total_loss
+        #         out = self.center[cent,:].clone().detach().cpu().numpy()
+        #         wandb.log({f'centering_vector_domain-{cent}-rank_{torch.cuda.current_device()}': out}, 
+        #                   step=self.iter)
+        return total_loss, dino_loss, barlow_loss
 
     @torch.no_grad()
     def update_center(self, teacher_output):
