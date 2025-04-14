@@ -32,6 +32,17 @@ class DataAugmentationDINO_easy(object):
             utils.GaussianBlur(p=0.5),
         ])
 
+    def __call__(self, images):
+        # images: (B,2,C,H,W)
+        crops = []
+        im1 = images[:,0,:,:,:].squeeze(1)
+        im2 = images[:,1,:,:,:].squeeze(1)
+        crops.append(self.global_transfo1(im1).float())
+        crops.append(self.global_transfo2(im1).float())
+        for _ in range(self.local_crops_number):
+            crops.append(self.local_transfo(im2).float())
+        return crops
+
 class DataAugmentationDINO(object):
     def __init__(self, global_crops_scale, local_crops_scale, local_crops_number):
         flip_and_color_jitter = transforms.Compose([
