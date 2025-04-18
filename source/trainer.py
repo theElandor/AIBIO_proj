@@ -1,21 +1,15 @@
 import os, sys, wandb
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
 from source.utils import *
-from torch.utils.data import DataLoader, random_split
-import torch.nn as nn
-from torch.utils.data import Subset
+from torch.utils.data import DataLoader
 from dataset import Rxrx1
 
 class Norm_Trainer():
-    def __init__(self, net, device, config, opt, loss_func, collate, scheduler=None):
+    def __init__(self, net, device, config, loss_func, collate):
         self.net = net.to(device)
         self.device = device
         self.config = config
-        self.opt = opt
         self.loss_func = loss_func
-        self.scheduler = scheduler
         self.collate = collate
         self.gen = torch.Generator().manual_seed(56)
 
@@ -42,52 +36,10 @@ class Norm_Trainer():
         )
     
     def train(self, losser: callable):
-        """
-        Trains a neural network model using the specified dataset and configurations.
-        Reads most of the parameters from the config directly.
-
-        Args:
-            losser (callable): A custom function to compute the loss. It takes the device, batch data, model, 
-                and loss function as input and returns the computed loss.
-
-        Attributes:
-            train_workers (int): Number of workers to use for the training data loader.
-            evaluation_workers (int): Number of workers to use for the validation data loader.
-            device (torch.device): The device (e.g., 'cuda' or 'cpu') on which training will run.
-
-        Data Loaders:
-            train_dataloader: DataLoader for the training subset, with batching and grouping logic.
-            val_loader: DataLoader for the validation subset, with batching and grouping logic.
-
-        Model Training:
-            - Handles checkpoint loading if specified in the configuration (`load_checkpoint`).
-            - Iterates through specified epochs (`self.config['epochs']`) and trains the model in batches.
-            - Logs training loss values for every batch and stores them in `training_loss_values`.
-            - Saves the model at intervals specified by `self.config['model_save_freq']`.
-            - Runs validation at intervals specified by `self.config['evaluation_freq']`, appending validation 
-            loss values to `validation_loss_values`.
-
-        Returns:
-            tuple:
-                - training_loss_values (list): List of training loss values recorded for each batch.
-                - validation_loss_values (list): List of validation loss values recorded during validation.
-
-        Raises:
-            ValueError: If required configurations (e.g., `epochs`, `batch_size`) are missing from `self.config`.
-
-        Notes:
-            - Uses `CombinatorialGrouper` to group data for training and validation.
-            - Data loaders use advanced prefetching and worker options for efficient data loading.
-
-        Example:
-            >>> trainer = Trainer(config, model, optimizer, loss_func)
-            >>> training_loss, validation_loss = trainer.train(losser)
-        """
-        #============= Preparing dataset... ==================
+        #============= Preparing loaders and LR scheduler... ==================
         self.init_wandb()
 
-        train_workers = self.config["train_workers"]
-        evaluation_workers = self.config["evaluation_workers"]
+        workers = self.config["workers"]
         device = self.device
 
         train_dataset = Rxrx1(self.config['dataset_dir'],
@@ -100,10 +52,10 @@ class Norm_Trainer():
 
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.config["batch_size"], shuffle=True,
-                                      num_workers=train_workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=True)
+                                      num_workers=workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=True)
         val_dataloader = DataLoader(val_dataset, batch_size=self.config["batch_size"], shuffle=True,
-                                    num_workers=evaluation_workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=True)
-
+                                    num_workers=workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=True)
+        self.opt, self.scheduler = load_opt(self.config, self.net, train_dataloader)
         #============= Loading full checkpoint or backbone + head ==================
         if self.config['load_checkpoint'] is not None:
             assert self.config['backbone_weights'] == None, "Config conflict: can't load a checkpoint and backbone weights."
@@ -127,53 +79,45 @@ class Norm_Trainer():
         if self.config['head_weights'] is not None:
             print("Loading head weights...")
             self.net.load_head_weights(self.config, self.device)
-                
+
         #============= Training Loop ==================
+        global_step = 0
         print("Starting training...", flush=True)
-        wandb.log({"lr": self.scheduler.get_last_lr()})
         for epoch in range(last_epoch, int(self.config['epochs'])):
             pbar = tqdm(total=len(train_dataloader), desc=f"Epoch-{epoch}")
             self.net.train()
             for i, (x_batch, siRNA_batch, metadata) in enumerate(train_dataloader):
+                global_step += 1
                 loss, _ = losser(device, (x_batch, siRNA_batch, metadata), self.net, self.loss_func)
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
                 training_loss_values.append(loss.item())
-                wandb.log({"train_loss": loss.item()})
-
+                wandb.log({"train_loss": loss.item()}, step=global_step)
+                # ================= Scheduler step (1 per iteration) =================
+                self.scheduler.step()
+                wandb.log({"lr":float(self.scheduler.get_lr()[0])}, step=global_step)
                 pbar.update(1)
                 pbar.set_postfix({'Loss': loss.item()})
 
+            save_model(os.path.join(self.config['checkpoint_dir'], "checkpoint.pth"), epoch, self.net, self.opt, training_loss_values, validation_loss_values, 
+                       self.config['batch_size'], self.config['opt'], self.scheduler)
             if (epoch + 1) % int(self.config['model_save_freq']) == 0:
-                save_model(epoch, self.net, self.opt, training_loss_values, validation_loss_values,
-                           self.config['batch_size'], self.config['checkpoint_dir'], self.config['opt'], self.scheduler)
+                name = os.path.join(self.config['checkpoint_dir'], "checkpoint{}".format(epoch + 1))
+                save_model(name, epoch, self.net, self.opt, training_loss_values, validation_loss_values,
+                           self.config['batch_size'], self.config['opt'], self.scheduler)
 
-            # Evaluation
+            # ================= Validation Loop (after evaluation_freq epochs) ==================
             if (epoch + 1) % int(self.config['evaluation_freq']) == 0:
                 print(f"Running Validation-{str(epoch+1)}...")
-                val_loss, accuracy = validation(net = self.net, 
+                val_loss, accuracy = validation(net = self.net,
                                                 val_loader = val_dataloader, 
-                                                device = self.device, 
+                                                device = self.device,
                                                 loss_func = self.loss_func, 
                                                 losser = losser, 
                                                 epoch = epoch)
                 validation_loss_values += val_loss
                 mean_loss = sum(val_loss) / len(val_loss) if val_loss else 0  # Division by zero paranoia
-
-                # Wandb time!
-                wandb.log({"val_loss": mean_loss})
-                if self.config["log_accuracy"]:
-                    wandb.log({"accuracy": accuracy})
-
-            if (self.scheduler is not None):
-                self.scheduler.step()
-                last_lr = self.scheduler.get_last_lr()
-                if isinstance(last_lr, list) and len(last_lr) == 1:
-                    last_lr = last_lr[0]
-                    wandb.log({"lr": last_lr})
-                elif isinstance(last_lr, list) and len(last_lr) > 1:
-                    for i, lr in enumerate(last_lr):
-                        wandb.log({f"lr_{i}": lr[i]})
-
+                wandb.log({"val_loss": mean_loss}, step=global_step)
+                if self.config["log_accuracy"]: wandb.log({"accuracy": accuracy}, step=global_step)
         return training_loss_values, validation_loss_values

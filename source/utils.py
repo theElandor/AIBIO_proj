@@ -184,14 +184,19 @@ def load_loss(lossname: str) -> Callable:
     else:
         raise ValueError("Invalid lossname")
 
-
-def load_opt(config: dict, net: torch.nn.Module) -> torch.optim.Optimizer:
-    if config['opt'] == "adam":
+def load_opt(config: dict, net: torch.nn.Module, train_dataloader) -> torch.optim.Optimizer:
+    optimizer, scheduler = config['opt'].split("_")
+    assert optimizer in ["adam"], "Invalid optimizer specified."
+    assert scheduler in ["poly", "cosine"], "Invalid scheduler specified."
+    total_iterations = (config['epochs'] * len(train_dataloader))
+    if optimizer == "adam":
         opt = torch.optim.Adam(net.parameters(), lr=config['lr'], weight_decay=0.00001)
-        sched = torch.optim.lr_scheduler.PolynomialLR(opt, total_iters=config['epochs'], power=config['sched_pow'])
-        return opt, sched
-    else:
-        raise ValueError("Invalid optimizer")
+    if scheduler == "poly":
+        scheduler_power = config["sched_pow"] if config["sched_pow"] is not None else 1
+        sched = torch.optim.lr_scheduler.PolynomialLR(opt, total_iters=total_iterations, power=scheduler_power)
+    elif scheduler == "cosine":
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=total_iterations, eta_min=0.00001)
+    return opt, sched
 
 
 def load_yaml() -> dict:
@@ -249,8 +254,7 @@ def config_loader(config):
 
     net = load_net(config["net"], options)
     loss = load_loss(config["loss"])
-    opt, sched = load_opt(config, net)
-    return (net, loss, opt, sched, collate)
+    return (net, loss, collate)
 
 # Losser (loss calculator) for self supervised learning with simCLR
 
@@ -352,8 +356,7 @@ def validation(net, val_loader, device, loss_func, losser, epoch)-> Tuple[List[f
 
 
 
-def save_model(epoch, net, opt, train_loss, val_loss, batch_size, checkpoint_dir, optimizer, scheduler=None):
-    name = os.path.join(checkpoint_dir, "checkpoint{}".format(epoch + 1))
+def save_model(name, epoch, net, opt, train_loss, val_loss, batch_size, optimizer, scheduler=None):
     torch.save(
         {
             "epoch": epoch,

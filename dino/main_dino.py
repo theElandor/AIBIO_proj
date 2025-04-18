@@ -150,7 +150,7 @@ def get_args_parser():
     parser.add_argument("--metadata_path", default=None, type=str, help="Path of the metadata to use.")
     parser.add_argument("--cell_type", default=None, type=str, help="Cell type to use.")
     parser.add_argument("--acc_steps", default=1, type=int, help="Gradient accumulation steps to perform.") # B * steps = effective B    
-    parser.add_argument("--easy_task", default=False, type=bool, help="If True, uses easy augmentations.") # B * steps = effective B    
+    parser.add_argument("--easy_task", default=False, type=utils.bool_flag, help="If True, uses easy augmentations.")
     # ================== new loss options ==============
     parser.add_argument("--custom_loss", default=False, type=utils.bool_flag, help="Whether to use CDCL loss function.")
     parser.add_argument("--multi_center_training", default=False, type=utils.bool_flag, help="Whether to use CDCL loss function.")
@@ -503,7 +503,7 @@ class DINOLoss(nn.Module):
                 total_loss += loss.mean()
                 n_loss_terms += 1
         total_loss /= n_loss_terms
-        self.update_center(teacher_output, targets)
+        self.update_center(teacher_output)
         return total_loss
 
     @torch.no_grad()
@@ -554,7 +554,7 @@ class DINOLossMultiCenter(nn.Module):
         if (self.num_domains is not None) and self.multi_center_training:
             self.register_buffer("center", torch.zeros(self.num_domains, out_dim))
             self.domain_wise_centering = True
-            self.examples_in_each_domain = torch.tensor([self.examples_in_each_domain],dtype=torch.float32).t().to(self.device_id)
+            self.examples_in_each_domain = torch.tensor([self.examples_in_each_domain],dtype=torch.float32).t().cuda()
         else:
             self.domain_wise_centering = False # Changes if num_domains is not none
             self.register_buffer("center", torch.zeros(1, out_dim))
@@ -594,7 +594,7 @@ class DINOLossMultiCenter(nn.Module):
         return teacher_out, teacher_centered
     
     def get_domainwise_centers(self,domain_belonging):
-        domain_belonging = torch.cat(domain_belonging, 0).to(self.device_id, non_blocking=True)
+        domain_belonging = torch.cat(domain_belonging, 0).cuda(non_blocking=True)
         domain_center = self.get_centers(len(domain_belonging), self.center, self.num_domains, domain_belonging, self.out_dim)
         
         return domain_center, domain_belonging
@@ -612,7 +612,7 @@ class DINOLossMultiCenter(nn.Module):
                 dist_teacher_centered = teacher_centered[i_t]
                 dist_student_out = student_out[i_s]
                 
-            
+
             # Do we want centring as an ablation?
             # Should we use the centered teacher output?
             c = self.bn(dist_teacher_centered).T @ self.bn(dist_student_out)
@@ -730,12 +730,11 @@ class DINOLossMultiCenter(nn.Module):
         
         # if self.iter % 10 == 0  and is_rank0():
         # wandb.log({'barlow_loss': barlow_loss, 'dino_loss': dino_loss})
-        # if self.iter % 50 == 0  and is_rank0():
-        #     for cent in range(self.center.shape[0]):
-                
-        #         out = self.center[cent,:].clone().detach().cpu().numpy()
-        #         wandb.log({f'centering_vector_domain-{cent}-rank_{torch.cuda.current_device()}': out}, 
-        #                   step=self.iter)
+        if self.iter % 50 == 0:
+            for cent in range(self.center.shape[0]):
+                out = self.center[cent,:].clone().detach().cpu().numpy()
+                wandb.log({f'centering_vector_domain-{cent}': out},
+                            step=self.iter)
         return total_loss, dino_loss, barlow_loss
 
     @torch.no_grad()
@@ -760,7 +759,7 @@ class DINOLossMultiCenter(nn.Module):
         
         eps = 1e-10
         ## Create zero matrix of shape batch_size x num_domains
-        one_hot_label = torch.zeros(batch_size, num_domains).to(self.device_id, non_blocking=True)
+        one_hot_label = torch.zeros(batch_size, num_domains).cuda(non_blocking=True)
 
         ## Make one hot vector of each row of the one_hot_vector_label matrix based on the domain_belonging
         one_hot_label = one_hot_label.scatter(dim=1, index=domain_belong.unsqueeze(0).T, value=1)#.type(torch.cuda.int64)
@@ -788,18 +787,18 @@ class DINOLossMultiCenter(nn.Module):
         weight = weight/((self.examples_in_each_domain+eps)/self.examples_in_each_domain.sum())
                     
         update_proportion = self.center_momentum+self.center_momentum_anti*(1-weight)
-        self.center = self.center.to(self.device_id) * update_proportion + update_centers * self.center_momentum_anti*weight
+        self.center = self.center.cuda() * update_proportion + update_centers * self.center_momentum_anti*weight
 
             
     def get_centers(self,batch_size,center_values,num_domains,domain_belong,width):
 
         ## Expand domain centers to third dimention covering the mini-batch size
 
-        cent = center_values.expand((batch_size,-1,-1)).to(self.device_id, non_blocking=True)
+        cent = center_values.expand((batch_size,-1,-1)).cuda(non_blocking=True)
 
         ## Domain center selection tensor of equal size of cent tensor. Basically a index tensor to select the correct centering for each Mini-Batch sample
         ## Create zero matrix of shape batch_size x num_domains
-        one_hot_label = torch.zeros(batch_size, num_domains).to(self.device_id, non_blocking=True)
+        one_hot_label = torch.zeros(batch_size, num_domains).cuda(non_blocking=True)
 
         ## Make one hot vector of each row of the one_hot_vector_label matrix based on the domain_belonging
         one_hot_label = one_hot_label.scatter(dim=1, index=domain_belong.unsqueeze(0).T, value=1)#.type(torch.cuda.int64)

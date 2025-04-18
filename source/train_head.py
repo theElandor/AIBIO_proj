@@ -11,6 +11,6 @@ if __name__ == "__main__":
 
     config = load_yaml()
     device = load_device(config)
-    net, loss_func, opt, sched, collate = config_loader(config)
-    tr_ = Norm_Trainer(net, device, config, opt, loss_func, collate, scheduler=sched)
+    net, loss_func, collate = config_loader(config)
+    tr_ = Norm_Trainer(net, device, config, loss_func, collate)
     training_loss_values, validation_loss_values = tr_.train(losser=perturbations_processing)
