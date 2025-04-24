@@ -151,6 +151,7 @@ def get_args_parser():
     parser.add_argument("--cell_type", default=None, type=str, help="Cell type to use.")
     parser.add_argument("--acc_steps", default=1, type=int, help="Gradient accumulation steps to perform.") # B * steps = effective B    
     parser.add_argument("--easy_task", default=False, type=utils.bool_flag, help="If True, uses easy augmentations.")
+    parser.add_argument("--sample_diff_cell_type", default=False, type=utils.bool_flag, help="If True, cross domain learning is applied also on cell_type.")
     # ================== new loss options ==============
     parser.add_argument("--custom_loss", default=False, type=utils.bool_flag, help="Whether to use CDCL loss function.")
     parser.add_argument("--multi_center_training", default=False, type=utils.bool_flag, help="Whether to use CDCL loss function.")
@@ -174,6 +175,7 @@ def train_dino(args):
                     dataframe=df,
                     subset=args.cell_type,
                     split='train',
+                    sample_diff_cell_type=args.sample_diff_cell_type,
                 )
 
     collate = tuple_channelnorm_collate if not args.easy_task else tuple_channelnorm_collate_easy
@@ -641,11 +643,11 @@ class DINOLossMultiCenter(nn.Module):
                 synchronize()     
 
             self.iter_loss_component +=1 
-            if self.iter % 50 == 0  and is_rank0():
+            # if self.iter % 50 == 0  and is_rank0():
 
-                diag = torch.diagonal(c, 0).clone().detach().cpu().numpy()
-                # wandb.log({f'barllow_diag-{self.iter_loss_component}-rank_{torch.cuda.current_device()}': diag}, 
-                #           step=self.iter)                        
+            #     diag = torch.diagonal(c, 0).clone().detach().cpu().numpy()
+            #     # wandb.log({f'barllow_diag-{self.iter_loss_component}-rank_{torch.cuda.current_device()}': diag}, 
+            #     #           step=self.iter)                        
 
             on_diag = torch.diagonal(c).add_(-1).pow_(2).mean()
             off_diag = self.off_diagonal(c).pow_(2).mean()
@@ -730,11 +732,11 @@ class DINOLossMultiCenter(nn.Module):
         
         # if self.iter % 10 == 0  and is_rank0():
         # wandb.log({'barlow_loss': barlow_loss, 'dino_loss': dino_loss})
-        if self.iter % 50 == 0:
-            for cent in range(self.center.shape[0]):
-                out = self.center[cent,:].clone().detach().cpu().numpy()
-                wandb.log({f'centering_vector_domain-{cent}': out},
-                            step=self.iter)
+        # if self.iter % 50 == 0:
+        #     for cent in range(self.center.shape[0]):
+        #         out = self.center[cent,:].clone().detach().cpu().numpy()
+        #         wandb.log({f'centering_vector_domain-{cent}': out},
+        #                     step=self.iter)
         return total_loss, dino_loss, barlow_loss
 
     @torch.no_grad()

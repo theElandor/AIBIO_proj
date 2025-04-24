@@ -38,7 +38,7 @@ class Rxrx1(Dataset):
     """
 
     
-    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all'):
+    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all', sample_diff_cell_type = False):
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
                                Not both!!!')
@@ -56,6 +56,7 @@ class Rxrx1(Dataset):
             self.metadata = pd.read_csv(metadata_path)
         else:   
             self.metadata = dataframe.copy(deep=True)
+        self.sample_diff_cell_type = sample_diff_cell_type
         
         
         # ================ CELL TYPE ================
@@ -123,13 +124,17 @@ class Rxrx1(Dataset):
                                   item.well + '_s' + str(item.site) + '_w6.png')
             ), item.sirna_id, item.experiment,list(item)) for item in self.metadata.itertuples(index=False)]
             self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
+            self.items["cell_type"] = self.items["metadata"].apply(lambda x: x[2])
         else:
             raise RuntimeError('You provided an invalid dataset path')
     def __getitem__(self, index):
-        img_paths_1, sirna_id_1, experiment_1, metadata_1 = self.items.iloc[index]
-
+        img_paths_1, sirna_id_1, experiment_1, metadata_1, cell_type_1 = self.items.iloc[index]
+        
         #extracting metadata for the new sample
-        df_filtered = self.items[(self.items['sirna_id'] == sirna_id_1) & (self.items['experiment'] != experiment_1)].reset_index(drop=True)
+        if not self.sample_diff_cell_type:
+            df_filtered = self.items[(self.items['sirna_id'] == sirna_id_1) & (self.items['experiment'] != experiment_1)].reset_index(drop=True)
+        else:
+            df_filtered = self.items[(self.items['sirna_id'] == sirna_id_1) & (self.items['experiment'] != experiment_1) & (self.items['cell_type'] != cell_type_1)].reset_index(drop=True)
 
         #sampling a random sample that respects our constraints
         if not df_filtered.empty:
@@ -137,7 +142,7 @@ class Rxrx1(Dataset):
         else:
             raise RuntimeError("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy")
         
-        img_paths_2, sirna_id_2, _ ,metadata_2 = df_filtered.iloc[random_index]
+        img_paths_2, sirna_id_2, _ ,metadata_2, _ = df_filtered.iloc[random_index]
         
         image_paths = (img_paths_1,img_paths_2)
         sirna_ids = (sirna_id_1,sirna_id_2)

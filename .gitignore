@@ -23,3 +23,6 @@ dino/.vscode/*
 #train configuration folder
 config/train/*
 config/slurm/*
+
+# plot folder for paper
+plots

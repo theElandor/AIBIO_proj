@@ -1,0 +1,41 @@
+# MODEL
+backbone: vit_small
+backbone_weights: /work/ai4bio2024/rxrx1/check_backup/checkpoints/dino/6c_FULL_2/checkpoint.pth
+freeze_backbone: True
+
+head: fc_head
+embedding_size: 384
+head_weights: ~
+num_classes: 1139
+
+net: cell_classifier
+load_checkpoint: ~
+
+
+# DIRECTORIES
+checkpoint_dir: /work/ai4bio2024/rxrx1/check_backup/checkpoints/dino/6c_FULL_2/head
+dataset_dir: /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig
+metadata_path: /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig/metadata/meta.csv \
+
+# TRAINING OPTIONS
+cell_type: HUVEC
+epochs: 250
+batch_size: 256
+collate_fun: tuple_channelnorm_collate_head
+loss: cross_entropy
+opt: adam_poly
+lr: 0.005
+evaluation_freq: 1
+log_accuracy: True
+model_save_freq: 20
+grouper: ~
+sched_pow: 1
+
+# HARDWARE
+device: gpu
+multiple_gpus: False
+workers: 16
+
+# WANDB CONFIG
+project_name: "AIBIO_proj"
+run_name: "6c_17_head(CDCL hard)"
