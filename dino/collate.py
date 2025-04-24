@@ -84,39 +84,6 @@ class DataAugmentationDINO(object):
         for _ in range(self.local_crops_number):
             crops.append(self.local_transfo(im2).float())
         return crops
-    
-def channelnorm_collate(batch): 
-    '''
-    Collate function for supervised training
-    It performs channel-wise normalization
-    '''
-    paths, sirna_ids, metadatas = zip(*batch)
-
-    #paths dimensionality: (batch_size,2,num_paths)
-    #sirna_ids dimensionality: (batch_size,2)
-    #metadatas dimensionality: (batch_size,2,len(metadata_list))
-    paths_1, _ = zip(*paths)
-    sirna_id_1 , _ = zip(*sirna_ids)
-    metadata_1, _ = zip(*metadatas)
-    
-    norm_images = []    
-    for i, path_tuple in enumerate(paths_1):
-
-        stacked_image = torch.cat([F.resize(decode_image(path),224) for path in path_tuple],dim=0).to(torch.float16) #stacking of the channels
-        #getting the tuples out of the metadata
-        mean_tuple = [float(x) for x in metadata_1[i][-2].strip("()").split(",")]
-        variance_tuple = [float(x) for x in metadata_1[i][-1].strip("()").split(",")]
-        
-        std_tuple = tuple(math.sqrt(element) for element in variance_tuple)
-        
-        stacked_image_norm = F.normalize(inpt=stacked_image,
-                                         mean = list(mean_tuple),
-                                         std = list(std_tuple)
-                                         )
-        norm_images.append(stacked_image_norm)
-        
-    norm_images = torch.stack(norm_images)
-    return norm_images, sirna_id_1, metadata_1
 
 
 def tuple_channelnorm_collate(batch):
