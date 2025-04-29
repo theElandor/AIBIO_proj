@@ -241,9 +241,9 @@ def config_loader(config):
 
     if config['num_classes'] is not None:
         options['num_classes'] = config['num_classes']
-    
-    assert 'collate_fun' in config, "Please provide a valid collate function."
-    if config['collate_fun'] == 'channelnorm_collate':
+    if 'collate_fun' not in config:
+        collate = None    
+    elif config['collate_fun'] == 'channelnorm_collate':
         collate = channelnorm_collate
     # these two collates are the same except that the second one
     # does not load the second image
@@ -281,18 +281,9 @@ def sim_clr_processing(device: torch.device, data: tuple, net: torch.nn.Module, 
 # Losser for supervised learning. Classification of cell types
 
 
-# da mettere a posto
-# def cell_type_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
-#     x_batch, siRNA, metadata = data
-#     out_feat = net(x_batch.to(torch.float).to(device))
-#     # metadata[0] contains the cell type
-#     loss = loss_func(out_feat, metadata[:, 0].to(device))
-#     return loss
-
-
 def perturbations_processing(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable)-> Tuple[torch.Tensor, namedtuple]:
     x_batch, siRNA, metadata = data
-    out_feat = net(x_batch.to(torch.float).to(device))
+    out_feat = net(x_batch.to(device))
     loss = loss_func(out_feat, torch.tensor(siRNA).to(device))
     predicted_labels = out_feat.argmax(dim=1)
 

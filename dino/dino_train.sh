@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH -o /homes/mlugli/output/6c_FULL_2_o.txt
-#SBATCH -e /homes/mlugli/output/6c_FULL_2_e.txt
-#SBATCH --job-name=DINO_FULL_2
+#SBATCH -o /homes/mlugli/output/6c_FULL_7_o.txt
+#SBATCH -e /homes/mlugli/output/6c_FULL_7_e.txt
+#SBATCH --job-name=DINO_FULL_7
 #SBATCH --account=ai4bio2024
 #SBATCH --partition=all_usr_prod
 #SBATCH --nodes=1
@@ -16,12 +16,12 @@ python3 /homes/mlugli/AIBIO_proj/dino/main_dino.py \
     --arch vit_small \
     --saveckp_freq 20\
     --data_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig \
-    --metadata_path /work/h2020deciderficarra_shared/rxrx1/rxrx1_orig/metadata/meta.csv \
-    --output_dir /work/ai4bio2024/rxrx1/check_backup/checkpoints/dino/6c_FULL_2 \
+    --metadata_path /work/h2020deciderficarra_shared/rxrx1/folds/aug_meta0.csv \
+    --output_dir /work/ai4bio2024/rxrx1/check_backup/checkpoints/dino/6c_FULL_7 \
     --load_pretrained /work/ai4bio2024/rxrx1/check_backup/checkpoints/OFFICIAL_ViT_pretrained/dino_deitsmall16_pretrain.pth \
     --epochs 100 \
-    --warmup_teacher_temp_epochs 20 \
-    --warmup_epochs 30 \
+    --warmup_teacher_temp_epochs 10 \
+    --warmup_epochs 10 \
     --lr 3e-4 \
     --weight_decay 4e-3 \
     --cell_type all \
@@ -33,6 +33,6 @@ python3 /homes/mlugli/AIBIO_proj/dino/main_dino.py \
     --multi_center_training False \
     --custom_loss True \
     --barlow_loss True \
-    --barlow_loss_weight 0.75 \
+    --barlow_loss_weight 0.25 \
     --easy_task True \
     --sample_diff_cell_type True \
