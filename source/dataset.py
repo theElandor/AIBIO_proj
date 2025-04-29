@@ -1,11 +1,13 @@
-import os, sys, torch
+import os, math, torch
+import math
 from torchvision.io import decode_image
 from torchvision.utils import save_image
+from concurrent.futures import ThreadPoolExecutor
+import torchvision.transforms.v2.functional as F
 # from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import Dataset
 import pandas as pd
-                
-    
+
 class Rxrx1(Dataset):
     
     """
@@ -41,6 +43,7 @@ class Rxrx1(Dataset):
     def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all'):
         self.split = split        
         self.subset = subset
+        self.executor = ThreadPoolExecutor(max_workers=6)
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
                                Not both!!!')
@@ -69,10 +72,6 @@ class Rxrx1(Dataset):
         if split == "all": pass        
         else: self.metadata = self.metadata[self.metadata['dataset'] == split]
         
-
-        #this part changes between different dataset directories
-        #IF YOU WANT TO CREATE A NEW SELF.ITEMS BEHAVIOUR, PUT THE PATHS THAT CORRESPOND TO THE SAME IMAGE IN A TUPLE, IN
-        #ASCENDING ORDER
         if self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v1.0':
             items_list = [((os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' + str(item.site) + '.png')),
                            item.sirna_id,
@@ -125,25 +124,19 @@ class Rxrx1(Dataset):
             self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
         else:
             raise RuntimeError('You provided an invalid dataset path')
+
+    def decode_resize(self, path):
+            return F.resize(decode_image(path), 224)
+        
     def __getitem__(self, index):
-        img_paths_1, sirna_id_1, experiment_1, metadata_1 = self.items.iloc[index]
-
-        #extracting metadata for the new sample
-        df_filtered = self.items[(self.items['sirna_id'] == sirna_id_1) & (self.items['experiment'] != experiment_1)].reset_index(drop=True)
-
-        #sampling a random sample that respects our constraints
-        if not df_filtered.empty:
-            random_index = df_filtered.sample(n=1).index[0]
-            img_paths_2, sirna_id_2, _ ,metadata_2 = df_filtered.iloc[random_index]
-        else:
-            print("Something went wrong: Dataset couldn't find any samples that matched the desired sampling policy.")
-            print("Since this dataset is used only for head training and validation and the second sample is not used, I will replicate the first.")
-            img_paths_2, sirna_id_2, _ ,metadata_2 = img_paths_1, sirna_id_1, experiment_1, metadata_1
-
-        image_paths = (img_paths_1,img_paths_2)
-        sirna_ids = (sirna_id_1,sirna_id_2)
-        metadatas = (metadata_1,metadata_2) 
-        return (image_paths, sirna_ids,metadatas)
+        paths, sirna, experiment, metadata = self.items.iloc[index]
+        decoded_images = [self.decode_resize(path) for path in paths]
+        stacked = torch.cat(decoded_images, dim=0).to(torch.float32)
+        mean = [float(x) for x in metadata[-2].strip("()").split(",")]
+        variance = [float(x) for x in metadata[-1].strip("()").split(",")]
+        std = tuple(math.sqrt(x) for x in variance)
+        stacked_norm = F.normalize(stacked, mean=list(mean), std=list(std))
+        return (stacked_norm, sirna, metadata)
 
     def __len__(self):
         return len(self.items)
