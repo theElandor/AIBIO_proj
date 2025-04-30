@@ -287,7 +287,10 @@ def load_dino_weights(model, pretrained_weights, checkpoint_key="student"):
     Function to load dino-vit weights. Taken from https://github.com/facebookresearch/dino/blob/main/utils.py
     """
     if os.path.isfile(pretrained_weights):
-        state_dict = torch.load(pretrained_weights, map_location="cpu")
+        try:
+            state_dict = torch.load(pretrained_weights, map_location="cpu")
+        except:
+            state_dict = torch.load(pretrained_weights, weights_only=False, map_location="cpu")
         if checkpoint_key is not None and checkpoint_key in state_dict:
             print(f"Take key {checkpoint_key} in provided checkpoint dict")
             state_dict = state_dict[checkpoint_key]

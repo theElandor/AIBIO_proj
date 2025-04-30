@@ -76,6 +76,12 @@ class Wrapper6C:
         # Concatenate the two transformed parts back together
         return torch.cat((tensor_1, tensor_2), dim=1)
 
+class WrapperIdentity:
+    def __init__(self, transform):
+        self.transform = transform
+
+    def __call__(self, tensor):
+        return self.transform(tensor)
 
 def load_pretrained_weights(model, pretrained_weights, checkpoint_key, model_name, patch_size):
     if os.path.isfile(pretrained_weights):
@@ -842,3 +848,10 @@ def multi_scale(samples, model):
     v /= 3
     v /= v.norm()
     return v
+
+def cut_channels(tpl,channels):
+    t = eval(tpl)[:channels]
+    return str(t)
+
+def process_tuple(tpl, channels):
+    return [cut_channels(x, channels) if str(x).startswith("(") else x for x in tpl]
