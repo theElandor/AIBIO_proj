@@ -1,4 +1,3 @@
-
 # Copyright (c) Facebook, Inc. and its affiliates.
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +21,6 @@ import json
 from pathlib import Path
 from dataset import Rxrx1
 from collate import *
-#from old_dataset import Rxrx1
 from hubconf import dino_vitb16
 from bio_utils import load_dino_weights, get_samples_per_domain, get_batch_domains
 
@@ -266,6 +264,9 @@ def train_dino(args):
     print(f"Student and Teacher are built: they are both {args.arch} network.")
     # ============ preparing loss ... ============
     examples_in_each_domain, mapping= get_samples_per_domain(args.metadata_path)
+    if args.multi_center_training:
+        print("Printing examples in each domain for multi centering...")
+        print(examples_in_each_domain)
     if args.custom_loss:
         number_of_domains = examples_in_each_domain.shape[0]
         dino_loss = DINOLossMultiCenter(
@@ -560,8 +561,7 @@ class DINOLossMultiCenter(nn.Module):
         self.dino_loss               = dino_loss
         self.device_id               = device_id
         self.multi_center_training   = multi_center_training 
-        self.barlow_lambda_off_diag  = barlow_lambda_off_diag
-        
+        self.barlow_lambda_off_diag  = barlow_lambda_off_diag 
         self.update_centering        = update_centering
         
         if (self.num_domains is not None) and self.multi_center_training:
