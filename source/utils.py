@@ -14,6 +14,7 @@ from functools import partial
 
 from source.vision_transformer import VisionTransformer
 from source.collate import *
+import torch.nn.functional as F
 
 def load_weights(checkpoint_path: str, net: torch.nn.Module, device: torch.cuda.device, exclude_projection=True) -> torch.utils.checkpoint:
     """!Load only network weights from checkpoint."""
@@ -131,8 +132,10 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
         return SimCLR50_norm()
       
 #   ===========VIT backbones=================
-    if netname == "vit_small":
-        return vit_small()
+    if netname == "vit_small_6":
+        return vit_small(in_chans=6)
+    if netname == "vit_small_3":
+        return vit_small(in_chans=3)
 
 #   ===========FC Heads=================
     if netname.startswith("fc_head"):
@@ -141,14 +144,11 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
         from source.net import FcHead
         assert 'embedding_size' in options.keys(), "Provide parameter 'embedding_size' for FCHead!"
         assert options['embedding_size'] is not None, "Provide parameter 'embedding_size' for FCHead!"
-        return FcHead(num_classes=options['num_classes'],embedding_size=options['embedding_size'])
+        return FcHead(num_classes=options['num_classes'],
+                      embedding_size=options['embedding_size'])
     if netname == "fc_head50":
         from source.net import FcHead50
         return FcHead50(num_classes=options['num_classes'])
-    if netname == "fc_head_dino384":
-        from source.net import FcHeadDino_384
-        return FcHeadDino_384(num_classes=options['num_classes'])
-
 #   ===========Backbone + Head architectures=================
     if netname == "cell_classifier":
         assert 'backbone' in options.keys() and 'head' in options.keys(
@@ -175,12 +175,20 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
     else:
         raise ValueError("Invalid netname")
 
+def custom_cross_entropy(logits, targets):
+    temperature = 0.8
+    scaled = logits / temperature
+    loss = F.cross_entropy(scaled, targets)
+    return loss
+    
 
 def load_loss(lossname: str) -> Callable:
     if lossname == "NCE":
         return info_nce_loss
     if lossname == "cross_entropy":
         return torch.nn.functional.cross_entropy
+    if lossname == "custom_cross_entropy":
+        return custom_cross_entropy
     else:
         raise ValueError("Invalid lossname")
 
@@ -231,18 +239,21 @@ def load_yaml() -> dict:
 
 def config_loader(config):
     options = {}
-    if config['backbone'] is not None:
-        backbone = load_net(config['backbone'])
-        options["backbone"] = backbone
-    if config['head'] is not None:
-        assert config['num_classes'] is not None, "Please provide the number of classes for the head."
-        head = load_net(config['head'], options={'num_classes': config['num_classes'],'embedding_size':config['embedding_size']})
-        options["head"] = head
+    assert config['backbone'] is not None, "Please provide a backbone."
+    assert config['head'] is not None, "Please provide a head."
+    assert config['net'] is not None, "Please provide a net."
+    assert config['loss'] is not None, "Please provide a loss."
+    assert config['num_classes'] is not None, "Please provide a number of classes."
+    backbone = load_net(config['backbone'])
+    options["backbone"] = backbone
 
-    if config['num_classes'] is not None:
-        options['num_classes'] = config['num_classes']
+    head = load_net(config['head'], options={'num_classes': config['num_classes'],'embedding_size':config['embedding_size']})
+    options["head"] = head
+
+    options['num_classes'] = config['num_classes']
+
     if 'collate_fun' not in config:
-        collate = None    
+        collate = None 
     elif config['collate_fun'] == 'channelnorm_collate':
         collate = channelnorm_collate
     # these two collates are the same except that the second one
@@ -363,22 +374,18 @@ def save_model(name, epoch, net, opt, train_loss, val_loss, batch_size, optimize
     )
     print(f"Model saved in {name}.")
 
-
-
-
-
 def sim_clr_processing_norm(device: torch.device, data: tuple, net: torch.nn.Module, loss_func: Callable):
     x_batch, _, _ = data
     out_feat = net.forward(x_batch.to(device))
     loss = loss_func(out_feat, device)
     return loss , None
 
-def vit_small(patch_size=16, **kwargs):
+def vit_small(patch_size=16, in_chans=6, **kwargs):
     """
     Returns a small vision transformer. (Code taken from original repo)
     """
     model = VisionTransformer(
-        patch_size=patch_size, in_chans=6, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
+        patch_size=patch_size, in_chans=in_chans, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 

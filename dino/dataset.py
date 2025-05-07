@@ -1,9 +1,10 @@
-import os, sys, torch
+import os
 from torchvision.io import decode_image
 from torchvision.utils import save_image
 # from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import Dataset
 import pandas as pd
+from utils import process_tuple
                 
     
 class Rxrx1(Dataset):
@@ -38,7 +39,7 @@ class Rxrx1(Dataset):
     """
 
     
-    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all', sample_diff_cell_type = False):
+    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all', sample_diff_cell_type = False, channels=6):
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
                                Not both!!!')
@@ -57,6 +58,8 @@ class Rxrx1(Dataset):
         else:   
             self.metadata = dataframe.copy(deep=True)
         self.sample_diff_cell_type = sample_diff_cell_type
+        assert channels <= 6, "Invalid number of channels specified"
+        self.channels = channels
         
         
         # ================ CELL TYPE ================
@@ -68,10 +71,6 @@ class Rxrx1(Dataset):
         if split == "all": pass        
         else: self.metadata = self.metadata[self.metadata['dataset'] == split]
         
-
-        #this part changes between different dataset directories
-        #IF YOU WANT TO CREATE A NEW SELF.ITEMS BEHAVIOUR, PUT THE PATHS THAT CORRESPOND TO THE SAME IMAGE IN A TUPLE, IN
-        #ASCENDING ORDER
         if self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v1.0':
             items_list = [((os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' + str(item.site) + '.png')),
                            item.sirna_id,
@@ -79,7 +78,7 @@ class Rxrx1(Dataset):
                            list(item)) 
                           for item in self.metadata.itertuples(index=False)]
             self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
-        #v2 dataset version
+        # ================== V2 dataset version(big) ==================
         elif self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v2.1':
             items_list = [((os.path.join(self.imgs_dir, 
                                   item.experiment, 
@@ -94,39 +93,18 @@ class Rxrx1(Dataset):
                            list(item))
                           for item in self.metadata.itertuples(index=False) for part in range(1,6)]
             self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
-        #orig dataset version    
+        # ================== Original dataset version ==================
         elif self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_orig':
             #old implementation
-            #self.items = [(paths, item.sirna_id, list(item)) for item in self.metadata.itertuples(index=False)]
-            items_list = [((os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w1.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w2.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w3.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w4.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w5.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w6.png')
-            ), item.sirna_id, item.experiment,list(item)) for item in self.metadata.itertuples(index=False)]
+            items_list = []
+            for item in self.metadata.itertuples(index=False):
+                paths = tuple([os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' + str(item.site) + f"_w{c}.png") for c in range(1,self.channels+1)])
+                items_list.append((paths, item.sirna_id, item.experiment, process_tuple(list(item), self.channels)))
             self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
             self.items["cell_type"] = self.items["metadata"].apply(lambda x: x[2])
         else:
             raise RuntimeError('You provided an invalid dataset path')
+    
     def __getitem__(self, index):
         img_paths_1, sirna_id_1, experiment_1, metadata_1, cell_type_1 = self.items.iloc[index]
         

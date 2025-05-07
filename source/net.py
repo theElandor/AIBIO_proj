@@ -66,7 +66,6 @@ class FcHead(nn.Module):
     def __init__(self, num_classes: int,embedding_size: int = 512):
         super(FcHead, self).__init__()
         self.num_classes = num_classes
-
         self.fc = nn.Linear(embedding_size, self.num_classes)
 
     def forward(self, x):

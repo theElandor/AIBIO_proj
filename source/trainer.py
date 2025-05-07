@@ -44,11 +44,13 @@ class Norm_Trainer():
 
         train_dataset = Rxrx1(self.config['dataset_dir'],
                         metadata_path=self.config['metadata_path'],
-                        subset=self.config["cell_type"], split="train")
+                        subset=self.config["cell_type"], split="train", 
+                        channels=self.config['channels'])
         
         val_dataset = Rxrx1(self.config['dataset_dir'],
                         metadata_path=self.config['metadata_path'],
-                        subset=self.config["cell_type"], split="val")
+                        subset=self.config["cell_type"], split="val",
+                        channels=self.config['channels'])
 
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.config["batch_size"], shuffle=True,
@@ -71,7 +73,7 @@ class Norm_Trainer():
         if self.config['backbone_weights'] is not None:
             print("Loading backbone weights...")
             self.net.load_backbone_weights(self.config, self.device)
-            if self.config['freeze_backbone'] is not None:
+            if self.config['freeze_backbone']:
                 self.net.freeze_backbone()
             else:
                 print("Warning, you loaded backbone weights without freezing them.")

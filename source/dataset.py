@@ -8,6 +8,13 @@ import torchvision.transforms.v2.functional as F
 from torch.utils.data import Dataset
 import pandas as pd
 
+def cut_channels(tpl,channels):
+    t = eval(tpl)[:channels]
+    return str(t)
+
+def process_tuple(tpl, channels):
+    return [cut_channels(x, channels) if str(x).startswith("(") else x for x in tpl]
+
 class Rxrx1(Dataset):
     
     """
@@ -40,10 +47,10 @@ class Rxrx1(Dataset):
     """
 
     
-    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all'):
+    def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all', channels = 6):
         self.split = split        
         self.subset = subset
-        self.executor = ThreadPoolExecutor(max_workers=6)
+        self.channels = channels
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
                                Not both!!!')
@@ -94,42 +101,23 @@ class Rxrx1(Dataset):
                            list(item))
                           for item in self.metadata.itertuples(index=False) for part in range(1,6)]
             self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
-        #orig dataset version    
+        # =================== original dataset version ==================
+        # loads the first self.channels channels of the original dataset
         elif self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_orig':
-            items_list = [((os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w1.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w2.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w3.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w4.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w5.png'),
-                     os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_w6.png')
-            ), item.sirna_id, item.experiment,list(item)) for item in self.metadata.itertuples(index=False)]
+            items_list = []
+            for item in self.metadata.itertuples(index=False):
+                paths = tuple([os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' + str(item.site) + f"_w{c}.png") for c in range(1,self.channels+1)])
+                items_list.append((paths, item.sirna_id, item.experiment, process_tuple(list(item), self.channels)))
             self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
+            self.items["cell_type"] = self.items["metadata"].apply(lambda x: x[2])
         else:
             raise RuntimeError('You provided an invalid dataset path')
-
+          
     def decode_resize(self, path):
             return F.resize(decode_image(path), 224)
         
     def __getitem__(self, index):
-        paths, sirna, experiment, metadata = self.items.iloc[index]
+        paths, sirna, _, metadata, _= self.items.iloc[index]
         decoded_images = [self.decode_resize(path) for path in paths]
         stacked = torch.cat(decoded_images, dim=0).to(torch.float32)
         mean = [float(x) for x in metadata[-2].strip("()").split(",")]

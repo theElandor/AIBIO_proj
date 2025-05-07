@@ -1,4 +1,3 @@
-
 # Copyright (c) Facebook, Inc. and its affiliates.
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +21,6 @@ import json
 from pathlib import Path
 from dataset import Rxrx1
 from collate import *
-#from old_dataset import Rxrx1
 from hubconf import dino_vitb16
 from bio_utils import load_dino_weights, get_samples_per_domain, get_batch_domains
 
@@ -123,14 +121,14 @@ def get_args_parser():
     parser.add_argument('--drop_path_rate', type=float, default=0.1, help="stochastic depth rate")
     
     # Multi-crop parameters
-    parser.add_argument('--global_crops_scale', type=float, nargs='+', default=(0.4, 1.),
+    parser.add_argument('--global_crops_scale', type=float, nargs='+', default=(0.9, 1.),
         help="""Scale range of the cropped image before resizing, relatively to the origin image.
         Used for large global view cropping. When disabling multi-crop (--local_crops_number 0), we
         recommand using a wider range of scale ("--global_crops_scale 0.14 1." for example)""")
     parser.add_argument('--local_crops_number', type=int, default=8, help="""Number of small
         local views to generate. Set this parameter to 0 to disable multi-crop training.
         When disabling multi-crop we recommend to use "--global_crops_scale 0.14 1." """)
-    parser.add_argument('--local_crops_scale', type=float, nargs='+', default=(0.05, 0.4),
+    parser.add_argument('--local_crops_scale', type=float, nargs='+', default=(0.3, 0.5),
         help="""Scale range of the cropped image before resizing, relatively to the origin image.
         Used for small local view cropping of multi-crop.""")
 
@@ -152,6 +150,7 @@ def get_args_parser():
     parser.add_argument("--acc_steps", default=1, type=int, help="Gradient accumulation steps to perform.") # B * steps = effective B    
     parser.add_argument("--easy_task", default=False, type=utils.bool_flag, help="If True, uses easy augmentations.")
     parser.add_argument("--sample_diff_cell_type", default=False, type=utils.bool_flag, help="If True, cross domain learning is applied also on cell_type.")
+    parser.add_argument("--channels",default=6, type=int, help="Number of channels to use during training.")
     # ================== new loss options ==============
     parser.add_argument("--custom_loss", default=False, type=utils.bool_flag, help="Whether to use CDCL loss function.")
     parser.add_argument("--multi_center_training", default=False, type=utils.bool_flag, help="Whether to use CDCL loss function.")
@@ -176,9 +175,15 @@ def train_dino(args):
                     subset=args.cell_type,
                     split='train',
                     sample_diff_cell_type=args.sample_diff_cell_type,
+                    channels=args.channels
                 )
+    # ============ collate function selection ============
+    if args.easy_task:
+        collate = tuple_channelnorm_collate_easy
+    else:
+        assert args.channels in [3, 6], "Only 3 and 6 channels are supported."
+        collate = tuple_channelnorm_collate_6c if args.channels == 6 else tuple_channelnorm_collate_3c
 
-    collate = tuple_channelnorm_collate if not args.easy_task else tuple_channelnorm_collate_easy
     data_loader = torch.utils.data.DataLoader(
         dataset,
         #sampler=sampler,
@@ -199,9 +204,12 @@ def train_dino(args):
     if args.arch in vits.__dict__.keys():
         student = vits.__dict__[args.arch](
             patch_size=args.patch_size,
+            in_channels = args.channels,
             drop_path_rate=args.drop_path_rate,  # stochastic depth
         )
-        teacher = vits.__dict__[args.arch](patch_size=args.patch_size)
+        teacher = vits.__dict__[args.arch](
+            patch_size=args.patch_size,
+            in_channels = args.channels,)
         embed_dim = student.embed_dim
     # if the network is a XCiT
     elif args.arch in torch.hub.list("facebookresearch/xcit:main"):
@@ -218,7 +226,8 @@ def train_dino(args):
         print(f"Unknow architecture: {args.arch}")
     # ============ custom weights loading ============
     if args.load_pretrained is not None:
-        load_dino_weights(student, args.load_pretrained)
+        load_dino_weights(student, args.load_pretrained, checkpoint_key="student")
+        load_dino_weights(teacher, args.load_pretrained, checkpoint_key="teacher")
     #=================================================
     # multi-crop wrapper handles forward with inputs of different resolutions
     student = utils.MultiCropWrapper(student, DINOHead(
@@ -255,6 +264,9 @@ def train_dino(args):
     print(f"Student and Teacher are built: they are both {args.arch} network.")
     # ============ preparing loss ... ============
     examples_in_each_domain, mapping= get_samples_per_domain(args.metadata_path)
+    if args.multi_center_training:
+        print("Printing examples in each domain for multi centering...")
+        print(examples_in_each_domain)
     if args.custom_loss:
         number_of_domains = examples_in_each_domain.shape[0]
         dino_loss = DINOLossMultiCenter(
@@ -549,8 +561,7 @@ class DINOLossMultiCenter(nn.Module):
         self.dino_loss               = dino_loss
         self.device_id               = device_id
         self.multi_center_training   = multi_center_training 
-        self.barlow_lambda_off_diag  = barlow_lambda_off_diag
-        
+        self.barlow_lambda_off_diag  = barlow_lambda_off_diag 
         self.update_centering        = update_centering
         
         if (self.num_domains is not None) and self.multi_center_training:

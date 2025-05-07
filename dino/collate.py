@@ -11,7 +11,10 @@ class DataAugmentationDINO_easy(object):
     """
     Simplified augmentations for an easier learning task. Improves stability.
     """
-    def __init__(self, global_crops_scale, local_crops_scale, local_crops_number):
+    def __init__(self, global_crops_scale, local_crops_scale, local_crops_number, wrapper):
+        # in this case, we apply augmentations that work for whatever input channel dimension.
+        # Because of this, the wrapper is not used.
+        self.wrapper = wrapper
         # first global crop
         self.global_transfo1 = transforms.Compose([
             transforms.RandomResizedCrop(224, scale=global_crops_scale),
@@ -44,34 +47,37 @@ class DataAugmentationDINO_easy(object):
         return crops
 
 class DataAugmentationDINO(object):
-    def __init__(self, global_crops_scale, local_crops_scale, local_crops_number):
+    def __init__(self, global_crops_scale, local_crops_scale, local_crops_number, wrapper):
+        # wrapper can be either WrapperIdentity or Wrapper6C. Wrapper6C is used for 6 channels images,
+        # and it applies the specified augmentations to the first 3 channels then to the last 3 separately.
+        # WrapperIdentity is used for 3 channels images, and it just applies the specified augmentation with no
+        # modification.
+        self.wrapper = wrapper
+        self.local_crops_number = local_crops_number
+
         flip_and_color_jitter = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomVerticalFlip(p=0.5),
+            transforms.RandomRotation(90),
              transforms.RandomApply(
-                 [utils.Wrapper6C(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1))],
+                 [self.wrapper(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1))],
                  p=0.8
              ),
-            utils.Wrapper6C(transforms.RandomGrayscale(p=0.2)),
         ])
         # first global crop
         self.global_transfo1 = transforms.Compose([
             transforms.RandomResizedCrop(224, scale=global_crops_scale),
             flip_and_color_jitter,
-            utils.GaussianBlur(1.0),
         ])
         # second global crop
         self.global_transfo2 = transforms.Compose([
             transforms.RandomResizedCrop(224, scale=global_crops_scale),
             flip_and_color_jitter,
-            utils.GaussianBlur(0.1),
-            utils.Wrapper6C(transforms.RandomSolarize(128, p=0.2))
         ])
-        # transformation for the local small crops
-        self.local_crops_number = local_crops_number
+        # local crops 
         self.local_transfo = transforms.Compose([
-            transforms.RandomResizedCrop(96, scale=local_crops_scale),
+            transforms.RandomResizedCrop(112, scale=local_crops_scale),
             flip_and_color_jitter,
-            utils.GaussianBlur(p=0.5),
         ])
 
     def __call__(self, images):
@@ -86,23 +92,27 @@ class DataAugmentationDINO(object):
         return crops
 
 
-def tuple_channelnorm_collate(batch):
-    return tuple_collate(batch, DataAugmentationDINO)
+def tuple_channelnorm_collate_6c(batch):
+    return tuple_collate(batch, DataAugmentationDINO, utils.Wrapper6C)
+
+def tuple_channelnorm_collate_3c(batch):
+    return tuple_collate(batch, DataAugmentationDINO, utils.WrapperIdentity)
 
 def tuple_channelnorm_collate_easy(batch):
-    return tuple_collate(batch, DataAugmentationDINO_easy)
+    return tuple_collate(batch, DataAugmentationDINO_easy, utils.WrapperIdentity)
 
-def tuple_collate(batch, augmentation):
+def tuple_collate(batch, augmentation, wrapper):
     '''
-    Collate function for supervised training
+    Collate function for self-supervised learning.
     It performs channel-wise normalization
     '''
     paths, sirna_ids, metadatas = zip(*batch)
     # hardcoded for simplicity
     transform = augmentation(
-        (0.4, 1.), 
-        (0.05, 0.4),
+        (0.9, 1.0), 
+        (0.3, 0.5),
         8,
+        wrapper
     )
     #paths dimensionality: (batch_size,2,num_paths)
     #sirna_ids dimensionality: (batch_size,2) tuple
@@ -115,8 +125,8 @@ def tuple_collate(batch, augmentation):
     means = [] # store means
     stds = [] # store stds
     for i, (path_tuple_1, path_tuple_2) in enumerate(zip(paths_1, paths_2)):
-        decoded_images_1 = [F.resize(decode_image(path), 224) for path in path_tuple_1]
-        decoded_images_2 = [F.resize(decode_image(path), 224) for path in path_tuple_2]
+        decoded_images_1 = [F.resize(decode_image(path), 256) for path in path_tuple_1]
+        decoded_images_2 = [F.resize(decode_image(path), 256) for path in path_tuple_2]
 
         stacked_image_1 = torch.cat(decoded_images_1, dim=0)
         stacked_image_2 = torch.cat(decoded_images_2, dim=0)
