@@ -12,6 +12,7 @@ import seaborn as sb
 import umap
 import collate
 
+
 BS = 32
 net = load_net("vit_small")
 assert torch.cuda.is_available(), "Notebook is not configured properly!"
