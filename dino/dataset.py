@@ -93,7 +93,7 @@ class Rxrx1(Dataset):
                            list(item))
                           for item in self.metadata.itertuples(index=False) for part in range(1,6)]
             self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
-        # ================== Original datasset version ==================
+        # ================== Original dataset version ==================
         elif self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_orig':
             #old implementation
             items_list = []

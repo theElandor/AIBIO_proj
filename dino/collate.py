@@ -53,33 +53,31 @@ class DataAugmentationDINO(object):
         # WrapperIdentity is used for 3 channels images, and it just applies the specified augmentation with no
         # modification.
         self.wrapper = wrapper
+        self.local_crops_number = local_crops_number
+
         flip_and_color_jitter = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomVerticalFlip(p=0.5),
+            transforms.RandomRotation(90),
              transforms.RandomApply(
                  [self.wrapper(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1))],
                  p=0.8
              ),
-            self.wrapper(transforms.RandomGrayscale(p=0.2)),
         ])
         # first global crop
         self.global_transfo1 = transforms.Compose([
             transforms.RandomResizedCrop(224, scale=global_crops_scale),
             flip_and_color_jitter,
-            utils.GaussianBlur(1.0),
         ])
         # second global crop
         self.global_transfo2 = transforms.Compose([
             transforms.RandomResizedCrop(224, scale=global_crops_scale),
             flip_and_color_jitter,
-            utils.GaussianBlur(0.1),
-            self.wrapper(transforms.RandomSolarize(128, p=0.2))
         ])
-        # transformation for the local small crops
-        self.local_crops_number = local_crops_number
+        # local crops 
         self.local_transfo = transforms.Compose([
-            transforms.RandomResizedCrop(96, scale=local_crops_scale),
+            transforms.RandomResizedCrop(112, scale=local_crops_scale),
             flip_and_color_jitter,
-            utils.GaussianBlur(p=0.5),
         ])
 
     def __call__(self, images):
@@ -111,8 +109,8 @@ def tuple_collate(batch, augmentation, wrapper):
     paths, sirna_ids, metadatas = zip(*batch)
     # hardcoded for simplicity
     transform = augmentation(
-        (0.4, 1.), 
-        (0.05, 0.4),
+        (0.9, 1.0), 
+        (0.3, 0.5),
         8,
         wrapper
     )
@@ -127,8 +125,8 @@ def tuple_collate(batch, augmentation, wrapper):
     means = [] # store means
     stds = [] # store stds
     for i, (path_tuple_1, path_tuple_2) in enumerate(zip(paths_1, paths_2)):
-        decoded_images_1 = [F.resize(decode_image(path), 224) for path in path_tuple_1]
-        decoded_images_2 = [F.resize(decode_image(path), 224) for path in path_tuple_2]
+        decoded_images_1 = [F.resize(decode_image(path), 256) for path in path_tuple_1]
+        decoded_images_2 = [F.resize(decode_image(path), 256) for path in path_tuple_2]
 
         stacked_image_1 = torch.cat(decoded_images_1, dim=0)
         stacked_image_2 = torch.cat(decoded_images_2, dim=0)
