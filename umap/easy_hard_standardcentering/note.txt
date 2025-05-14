@@ -1,0 +1,8 @@
+Plots done on the HUVEC 0 fold, training set only as usual.
+I will compare the embeddings of these two backbones:
++ Backbone trained with easy augmentation and standard centering (6c_13);
++ Backbone trained with HARD augmentations and standard centering (6c_15);
+Also in this case, the hard augmentations have a huge impact on the shape
+of the embeddings. But also in this case, no change in the downstream
+performance is observed. :(
+
