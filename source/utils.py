@@ -136,6 +136,8 @@ def load_net(netname: str, options={}) -> torch.nn.Module:
         return vit_small(in_chans=6)
     if netname == "vit_small_3":
         return vit_small(in_chans=3)
+    if netname == "vit_base_3":
+        return vit_base(in_chans=3)
 
 #   ===========FC Heads=================
     if netname.startswith("fc_head"):
@@ -388,6 +390,13 @@ def vit_small(patch_size=16, in_chans=6, **kwargs):
         patch_size=patch_size, in_chans=in_chans, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
+
+def vit_base(patch_size=16, in_chans=3, **kwargs):
+    model = VisionTransformer(
+        patch_size=patch_size, in_chans=in_chans, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4,
+        qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
 
 def load_dino_weights(model, pretrained_weights, checkpoint_key="student", exclude_projection=True):
     """

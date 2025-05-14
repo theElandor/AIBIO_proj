@@ -15,6 +15,7 @@ import collate
 
 BS = 32
 net = load_net("vit_small")
+torch.manual_seed(42)
 assert torch.cuda.is_available(), "Notebook is not configured properly!"
 device = "cuda:0"
 checkpoint = "/work/ai4bio2024/rxrx1/check_backup/checkpoints/dino/6c_15/checkpoint.pth"

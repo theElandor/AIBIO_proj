@@ -1,0 +1,4 @@
+Plots done on the HUVEC 0 fold (training set).
+The 6c_17 plot (hard augmentations, multi_centering active) has a very weird shape.
+It feels weird that the downstream performance does not change even
+if the embeddings are a lot different from the ones of the other backbone (easy augmentations, multi_centering active).

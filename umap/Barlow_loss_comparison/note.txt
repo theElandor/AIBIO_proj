@@ -1,0 +1,7 @@
+Plots done on the HUVEC_0 fold (training set).
+In this plots, I compare the ViT embeddings with and without the barlow
+loss, which considerably increases the downstream performance. 6c_13 is 
+the bakbone with the barlow loss, while 6c_14 is the first ablation in which
+I just turn off the barlow loss.
+We can observe a big red cluster on the top left corner in the backbone
+trained with no barlow loss. No big differences anyway.
