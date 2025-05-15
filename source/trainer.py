@@ -54,9 +54,9 @@ class Norm_Trainer():
 
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.config["batch_size"], shuffle=True,
-                                      num_workers=workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=True)
+                                      num_workers=workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=False)
         val_dataloader = DataLoader(val_dataset, batch_size=self.config["batch_size"], shuffle=True,
-                                    num_workers=workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=True)
+                                    num_workers=workers, drop_last=True, collate_fn=self.collate, prefetch_factor=4, pin_memory=False)
         self.opt, self.scheduler = load_opt(self.config, self.net, train_dataloader)
         #============= Loading full checkpoint or backbone + head ==================
         if self.config['load_checkpoint'] is not None:
