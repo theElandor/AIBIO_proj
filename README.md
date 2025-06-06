@@ -1,9 +1,6 @@
 # Self-supervised Model for classification of microscopy images
-
-Dataset: [https://www.rxrx.ai/rxrx1](https://www.rxrx.ai/rxrx1).
-
 To reproduce our results, use the instructions below.
-# Training ViT backbone with DINO
+## Training ViT backbone with DINO
 To train the backbone we started from the original DINO repo from facebook research: https://github.com/facebookresearch/dino.
 We wrote our custom data loader and integrated Cross Batch Consistency Learning from this work: https://github.com/cfredinh/CDCL.
 Our setup is way simpler, since you don't need to use docker to create the training environment.
@@ -21,7 +18,7 @@ Make sure to edit the script according your needs and work environment. Pay atte
 - **load_pretrained**: path to a valid checkpoint for the selected backbone.
     Leave this field empty if you want to train a model from scratch; 
 You can check the available options in main_dino.py
-# Training FC Head 
+## Training FC Head 
 The source code used to train the classification head is available in the **source** folder.
 To launch the training, run with SBATCH the following script **/config/slurm/train.sh** and make sure to edit the YAML configuration file **/config/train/train_head.yaml**. Edit the following fields:
 + **backbone_weights**: path of a valid checkpoint of the selected backbone;
@@ -29,7 +26,7 @@ To launch the training, run with SBATCH the following script **/config/slurm/tra
 + **dataset_dir**: path to the dataset folder;
 + **metadata_path**: path to the metadata file;
 + **project_name** and **run_name** if you use wandb;
-# UMAP Plots
+## UMAP Plots
 To reproduce our UMAP plots, use /source/embeddings.py and specify the path of the checkpoint of interest.
-# Material
-- [Dataset class](docs/dataset.md)
+## Material
+Dataset: [https://www.rxrx.ai/rxrx1](https://www.rxrx.ai/rxrx1).
