@@ -191,7 +191,7 @@ def train_dino(args):
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
         collate_fn = collate,
-        pin_memory=True,
+        pin_memory=False,
         prefetch_factor=4,
         drop_last=True,
     )
