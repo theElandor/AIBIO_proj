@@ -10,41 +10,24 @@ from utils import process_tuple
 class Rxrx1(Dataset):
     
     """
-    A PyTorch dataset class for the Rxrx1 dataset.
-
-    This dataset loads images and metadata from the Rxrx1 dataset directory,
-    ensuring that the required files exist and are properly structured.
-
-    Attributes:
-        root_dir (str): The root directory containing the "rxrx1_v1.0" dataset folder.
-        imgs_dir (str): Path to the "images" subdirectory within the dataset.
-        metadata (pd.DataFrame): DataFrame containing metadata read from "metadata.csv".
-        items (list): List of tuples containing image paths, sirna IDs, and metadata.
-
-    Args:
-        root_dir (str, optional): The root directory where the dataset is stored. 
-            Must be explicitly provided.
-
-    Raises:
-        RuntimeError: If `root_dir` is not provided or does not exist.
-
-    Methods:
-        __getitem__(index): Returns the image, sirna ID, and metadata for the given index.
-        __len__(): Returns the total number of items in the dataset.
-
-    Usage:
-        dataset = Rxrx1(root_dir = config['dataset_dir'],
-                        metadata_path = config['metadata_path'],
-                        mode = config['dataset_mode'])
+    Rxrx1 dataset initialization.
+    :param root_dir: The root directory where the dataset is stored.
+    :param metadata_path: The absolute path to the metadata CSV file.
+    :param dataframe: A pandas DataFrame containing the metadata.
+    :param subset: The cell type subset to use ('all' or 'huvec').
+    :param split: The dataset split to use ('all', 'train', 'test', 'val').
+    :param sample_diff_cell_type: If True, samples from different cell types.
+    :param channels: The number of channels to use (default is 6).
+    :raises RuntimeError: If the root directory does not exist or if both metadata_path and dataframe are provided.
     """
 
     
     def __init__(self, root_dir = None, metadata_path:str = None,dataframe:pd.DataFrame = None, subset = 'all', split='all', sample_diff_cell_type = False, channels=6):
         if metadata_path is None and dataframe is None:
             raise RuntimeError('Rxrx1 dataset needs either a metadata absolute path or a pd dataframe containing the metadata.\n \
-                               Not both!!!')
+                               Not both!')
         if metadata_path is not None and dataframe is not None:
-            raise RuntimeError('Rxrx1 dataset only need ONE of: metadata_path of dataframe. NOT BOTH!!!')
+            raise RuntimeError('Rxrx1 dataset only need ONE of: metadata_path of dataframe. NOT BOTH!')
 
         if root_dir is None:
             raise RuntimeError('Rxrx1 dataset needs to be explicitly initialized with a root_dir')
@@ -61,7 +44,6 @@ class Rxrx1(Dataset):
         assert channels <= 6, "Invalid number of channels specified"
         self.channels = channels
         
-        
         # ================ CELL TYPE ================
         assert subset in "all huvec HUVEC".split(), "Invalid cell type specified"
         if subset == 'all': pass
@@ -70,40 +52,13 @@ class Rxrx1(Dataset):
         assert split in "all train test val".split(), "Invalid split specified."
         if split == "all": pass        
         else: self.metadata = self.metadata[self.metadata['dataset'] == split]
-        
-        if self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v1.0':
-            items_list = [((os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' + str(item.site) + '.png')),
-                           item.sirna_id,
-                           item.experiment,
-                           list(item)) 
-                          for item in self.metadata.itertuples(index=False)]
-            self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
-        # ================== V2 dataset version(big) ==================
-        elif self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_v2.1':
-            items_list = [((os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_p' + str(part) + '_c012.png'),
-                            os.path.join(self.imgs_dir, 
-                                  item.experiment, 
-                                  "Plate" + str(item.plate), 
-                                  item.well + '_s' + str(item.site) + '_p' + str(part) + '_c345.png')),
-                            item.sirna_id, 
-                           item.experiment,
-                           list(item))
-                          for item in self.metadata.itertuples(index=False) for part in range(1,6)]
-            self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
-        # ================== Original dataset version ==================
-        elif self.root_dir == '/work/h2020deciderficarra_shared/rxrx1/rxrx1_orig':
-            #old implementation
-            items_list = []
-            for item in self.metadata.itertuples(index=False):
-                paths = tuple([os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' + str(item.site) + f"_w{c}.png") for c in range(1,self.channels+1)])
-                items_list.append((paths, item.sirna_id, item.experiment, process_tuple(list(item), self.channels)))
-            self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
-            self.items["cell_type"] = self.items["metadata"].apply(lambda x: x[2])
-        else:
-            raise RuntimeError('You provided an invalid dataset path')
+        # =================== prepare dataset items ==================
+        items_list = []
+        for item in self.metadata.itertuples(index=False):
+            paths = tuple([os.path.join(self.imgs_dir, item.experiment, "Plate" + str(item.plate), item.well + '_s' + str(item.site) + f"_w{c}.png") for c in range(1,self.channels+1)])
+            items_list.append((paths, item.sirna_id, item.experiment, process_tuple(list(item), self.channels)))
+        self.items = pd.DataFrame(items_list, columns=['paths', 'sirna_id', 'experiment','metadata'])
+        self.items["cell_type"] = self.items["metadata"].apply(lambda x: x[2])
     
     def __getitem__(self, index):
         img_paths_1, sirna_id_1, experiment_1, metadata_1, cell_type_1 = self.items.iloc[index]
