@@ -1,3 +1,4 @@
+Paper: https://theelandor.github.io/rxrx1.pdf
 # Self-supervised Model for classification of microscopy images
 To reproduce our results, use the instructions below.
 ## Training ViT backbone with DINO
